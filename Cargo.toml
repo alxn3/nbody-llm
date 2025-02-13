@@ -1,0 +1,10 @@
+[package]
+name = "nbody"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+piston = "1.0.0"
+piston_window = "0.132.0"
+rand = "0.8"
+bevy = "0.13.2"
