@@ -1,10 +1,10 @@
 use bevy::prelude::*;
-use nbody::barnes_hut_3d;
+use nbody::barnes_hut;
 use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 
-type Vec3 = barnes_hut_3d::Vec3;
+type Vec3 = barnes_hut::Vec3;
 
 #[derive(Component)]
 struct Body;
