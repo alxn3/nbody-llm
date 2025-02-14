@@ -1,142 +1,164 @@
-// Barnes–Hut implementation module
+// 3D Barnes–Hut implementation
 
 use std::ops::{Add, Div, Mul, Sub};
 
 #[derive(Clone, Copy, Debug)]
-pub struct Vec2 {
+pub struct Vec3 {
     pub x: f64,
     pub y: f64,
+    pub z: f64,
 }
 
-impl Vec2 {
+impl Vec3 {
     pub fn zero() -> Self {
-        Vec2 { x: 0.0, y: 0.0 }
-    }
-    pub fn norm(&self) -> f64 {
-        (self.x * self.x + self.y * self.y).sqrt()
-    }
-}
-
-impl Add for Vec2 {
-    type Output = Vec2;
-    fn add(self, other: Vec2) -> Vec2 {
-        Vec2 { x: self.x + other.x, y: self.y + other.y }
+        Vec3 {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+        }
     }
 }
 
-impl Sub for Vec2 {
-    type Output = Vec2;
-    fn sub(self, other: Vec2) -> Vec2 {
-        Vec2 { x: self.x - other.x, y: self.y - other.y }
+impl Add for Vec3 {
+    type Output = Vec3;
+    fn add(self, other: Vec3) -> Vec3 {
+        Vec3 {
+            x: self.x + other.x,
+            y: self.y + other.y,
+            z: self.z + other.z,
+        }
     }
 }
 
-impl Mul<f64> for Vec2 {
-    type Output = Vec2;
-    fn mul(self, scalar: f64) -> Vec2 {
-        Vec2 { x: self.x * scalar, y: self.y * scalar }
+impl Sub for Vec3 {
+    type Output = Vec3;
+    fn sub(self, other: Vec3) -> Vec3 {
+        Vec3 {
+            x: self.x - other.x,
+            y: self.y - other.y,
+            z: self.z - other.z,
+        }
     }
 }
 
-impl Div<f64> for Vec2 {
-    type Output = Vec2;
-    fn div(self, scalar: f64) -> Vec2 {
-        Vec2 { x: self.x / scalar, y: self.y / scalar }
+impl Mul<f64> for Vec3 {
+    type Output = Vec3;
+    fn mul(self, scalar: f64) -> Vec3 {
+        Vec3 {
+            x: self.x * scalar,
+            y: self.y * scalar,
+            z: self.z * scalar,
+        }
+    }
+}
+
+impl Div<f64> for Vec3 {
+    type Output = Vec3;
+    fn div(self, scalar: f64) -> Vec3 {
+        Vec3 {
+            x: self.x / scalar,
+            y: self.y / scalar,
+            z: self.z / scalar,
+        }
     }
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct Quad {
-    pub center: Vec2,
+pub struct Oct {
+    pub center: Vec3,
     pub half_dimension: f64,
 }
 
-impl Quad {
-    /// Returns true if the point lies in this quadrant.
-    pub fn contains(&self, point: &Vec2) -> bool {
-        let left = self.center.x - self.half_dimension;
-        let right = self.center.x + self.half_dimension;
-        let bottom = self.center.y - self.half_dimension;
-        let top = self.center.y + self.half_dimension;
-        point.x >= left && point.x <= right && point.y >= bottom && point.y <= top
+impl Oct {
+    pub fn contains(&self, point: &Vec3) -> bool {
+        point.x >= self.center.x - self.half_dimension
+            && point.x <= self.center.x + self.half_dimension
+            && point.y >= self.center.y - self.half_dimension
+            && point.y <= self.center.y + self.half_dimension
+            && point.z >= self.center.z - self.half_dimension
+            && point.z <= self.center.z + self.half_dimension
     }
 }
 
 #[derive(Clone, Debug)]
-pub struct Body {
-    pub position: Vec2,
-    pub prev_position: Vec2,
-    pub velocity: Vec2,
-    pub acceleration: Vec2,
+pub struct Body3D {
+    pub position: Vec3,
+    pub _prev_position: Vec3,
+    pub velocity: Vec3,
+    pub _acceleration: Vec3,
     pub mass: f64,
 }
 
 #[derive(Clone, Debug)]
-pub struct BHTree {
-    pub quad: Quad,
-    pub body: Option<Body>,
+pub struct BHOctree {
+    pub oct: Oct,
+    pub body: Option<Body3D>,
     pub mass: f64,
-    pub com: Vec2, // center of mass of this node
-    pub nw: Option<Box<BHTree>>,
-    pub ne: Option<Box<BHTree>>,
-    pub sw: Option<Box<BHTree>>,
-    pub se: Option<Box<BHTree>>,
+    pub com: Vec3,
+    pub children: [Option<Box<BHOctree>>; 8],
 }
 
-impl BHTree {
-    pub fn new(quad: Quad) -> BHTree {
-        BHTree {
-            quad,
+impl BHOctree {
+    const OCTANTS: [(f64, f64, f64); 8] = [
+        (-1.0, 1.0, 1.0),
+        (1.0, 1.0, 1.0),
+        (-1.0, 1.0, -1.0),
+        (1.0, 1.0, -1.0),
+        (-1.0, -1.0, 1.0),
+        (1.0, -1.0, 1.0),
+        (-1.0, -1.0, -1.0),
+        (1.0, -1.0, -1.0),
+    ];
+
+    pub fn new(oct: Oct) -> BHOctree {
+        BHOctree {
+            oct,
             body: None,
             mass: 0.0,
-            com: Vec2::zero(),
-            nw: None,
-            ne: None,
-            sw: None,
-            se: None,
+            com: Vec3::zero(),
+            children: [None, None, None, None, None, None, None, None],
         }
     }
 
-    /// Returns true if this node has no subdivided children.
     pub fn is_external(&self) -> bool {
-        self.nw.is_none() && self.ne.is_none() && self.sw.is_none() && self.se.is_none()
+        self.children.iter().all(|c| c.is_none())
     }
 
-    /// Subdivide this quadrant into four children.
     pub fn subdivide(&mut self) {
-        let new_half = self.quad.half_dimension / 2.0;
-        let x = self.quad.center.x;
-        let y = self.quad.center.y;
-        self.nw = Some(Box::new(BHTree::new(Quad { center: Vec2 { x: x - new_half, y: y + new_half }, half_dimension: new_half })));
-        self.ne = Some(Box::new(BHTree::new(Quad { center: Vec2 { x: x + new_half, y: y + new_half }, half_dimension: new_half })));
-        self.sw = Some(Box::new(BHTree::new(Quad { center: Vec2 { x: x - new_half, y: y - new_half }, half_dimension: new_half })));
-        self.se = Some(Box::new(BHTree::new(Quad { center: Vec2 { x: x + new_half, y: y - new_half }, half_dimension: new_half })));
-    }
-
-    /// Given a position, returns a mutable reference to the appropriate child node.
-    pub fn get_child_mut(&mut self, pos: &Vec2) -> &mut Box<BHTree> {
-        if pos.x <= self.quad.center.x {
-            if pos.y >= self.quad.center.y {
-                self.nw.as_mut().unwrap()
-            } else {
-                self.sw.as_mut().unwrap()
-            }
-        } else {
-            if pos.y >= self.quad.center.y {
-                self.ne.as_mut().unwrap()
-            } else {
-                self.se.as_mut().unwrap()
-            }
+        let new_half = self.oct.half_dimension / 2.0;
+        for i in 0..8 {
+            let (dx, dy, dz) = Self::OCTANTS[i];
+            let center = Vec3 {
+                x: self.oct.center.x + dx * new_half,
+                y: self.oct.center.y + dy * new_half,
+                z: self.oct.center.z + dz * new_half,
+            };
+            self.children[i] = Some(Box::new(BHOctree::new(Oct {
+                center,
+                half_dimension: new_half,
+            })));
         }
     }
 
-    /// Insert a body into the Barnes–Hut tree.
-    pub fn insert(&mut self, b: Body) {
-        // If this body is not in our quadrant, ignore it.
-        if !self.quad.contains(&b.position) {
+    fn get_child_index(&self, pos: &Vec3) -> usize {
+        let mut index = 0;
+        if pos.x >= self.oct.center.x {
+            index |= 1
+        }
+        if pos.y >= self.oct.center.y {
+            index |= 2
+        }
+        if pos.z >= self.oct.center.z {
+            index |= 4
+        }
+        index
+    }
+
+    pub fn insert(&mut self, b: Body3D) {
+        if !self.oct.contains(&b.position) {
             return;
         }
-        // If the node is empty and is an external node, store this body.
+
         if self.body.is_none() && self.is_external() {
             let mass = b.mass;
             let pos = b.position;
@@ -145,60 +167,56 @@ impl BHTree {
             self.com = pos;
             return;
         } else {
-            // If this node is external but already contains a body,
-            // subdivide and then reinsert the old one.
             if self.is_external() {
                 self.subdivide();
                 if let Some(existing) = self.body.take() {
-                    let child = self.get_child_mut(&existing.position);
-                    child.insert(existing);
+                    let index = self.get_child_index(&existing.position);
+                    if let Some(child) = &mut self.children[index] {
+                        child.insert(existing);
+                    }
                 }
             }
-            // Update the mass and center-of-mass.
+
             let total_mass = self.mass + b.mass;
             self.com = (self.com * self.mass + b.position * b.mass) / total_mass;
             self.mass = total_mass;
-            // Finally, insert the new body in the appropriate quadrant.
-            let child = self.get_child_mut(&b.position);
-            child.insert(b);
+
+            let index = self.get_child_index(&b.position);
+            if let Some(child) = &mut self.children[index] {
+                child.insert(b);
+            }
         }
     }
 
-    /// Recursively calculate the gravitational force exerted on body `b` from this tree node.
-    /// Uses the Barnes–Hut approximation if the node is sufficiently far away.
-    pub fn calc_force(&self, b: &Body, theta: f64, G: f64, softening: f64) -> Vec2 {
+    pub fn calc_force(&self, b: &Body3D, theta: f64, g: f64, softening: f64) -> Vec3 {
         if self.mass == 0.0 {
-            return Vec2::zero();
+            return Vec3::zero();
         }
+
         let dx = self.com.x - b.position.x;
         let dy = self.com.y - b.position.y;
-        let dist = (dx * dx + dy * dy).sqrt();
-        // If this node is external or the node's size is small enough compared to the distance,
-        // treat it as a single body.
-        if self.is_external() || (self.quad.half_dimension * 2.0 / dist) < theta {
-            // If the only body in the node is the same as b, then do not add any force.
+        let dz = self.com.z - b.position.z;
+        let dist = (dx * dx + dy * dy + dz * dz).sqrt();
+
+        if self.is_external() || (self.oct.half_dimension * 2.0 / dist) < theta {
             if let Some(body_in_node) = &self.body {
-                if (body_in_node.position.x == b.position.x) && (body_in_node.position.y == b.position.y) {
-                    return Vec2::zero();
+                if (body_in_node.position.x == b.position.x)
+                    && (body_in_node.position.y == b.position.y)
+                    && (body_in_node.position.z == b.position.z)
+                {
+                    return Vec3::zero();
                 }
             }
-            let factor = G * b.mass * self.mass / (dist * dist + softening * softening);
-            // Normalize the direction and multiply.
-            return Vec2 { x: factor * dx / dist, y: factor * dy / dist };
+            let factor = g * b.mass * self.mass / (dist * dist + softening * softening).powf(1.5);
+            Vec3 {
+                x: factor * dx,
+                y: factor * dy,
+                z: factor * dz,
+            }
         } else {
-            // Otherwise, aggregate the force contributions from each child.
-            let mut force = Vec2::zero();
-            if let Some(ref nw) = self.nw {
-                force = force + nw.calc_force(b, theta, G, softening);
-            }
-            if let Some(ref ne) = self.ne {
-                force = force + ne.calc_force(b, theta, G, softening);
-            }
-            if let Some(ref sw) = self.sw {
-                force = force + sw.calc_force(b, theta, G, softening);
-            }
-            if let Some(ref se) = self.se {
-                force = force + se.calc_force(b, theta, G, softening);
+            let mut force = Vec3::zero();
+            for child in self.children.iter().flatten() {
+                force = force + child.calc_force(b, theta, g, softening);
             }
             force
         }

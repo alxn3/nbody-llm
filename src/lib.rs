@@ -1,1 +1,1 @@
-pub mod barnes_hut_3d;
+pub mod barnes_hut;
