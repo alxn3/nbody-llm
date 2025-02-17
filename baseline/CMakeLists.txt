@@ -15,7 +15,7 @@ ExternalProject_Add(
     CONFIGURE_COMMAND ""
     BUILD_COMMAND make librebound -j${N}
     BUILD_IN_SOURCE TRUE
-    INSTALL_COMMAND ""
+    INSTALL_COMMAND mv src/librebound.so ${CMAKE_CURRENT_BINARY_DIR}
 )
 ExternalProject_Get_Property(rebound SOURCE_DIR)
 
@@ -25,4 +25,4 @@ add_dependencies(baseline rebound)
 set(LIBRARIES m)
 
 target_include_directories(baseline PRIVATE ${SOURCE_DIR}/src)
-target_link_libraries(baseline ${LIBRARIES} ${SOURCE_DIR}/librebound.so)
+target_link_libraries(baseline ${LIBRARIES} ${CMAKE_CURRENT_BINARY_DIR}/librebound.so)
