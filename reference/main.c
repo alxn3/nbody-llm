@@ -1,6 +1,3 @@
-// Code taken from:
-// https://github.com/hannorein/rebound/blob/main/examples/restricted_threebody/problem.c
-
 #include "rebound.h"
 #include <math.h>
 #include <stdio.h>
@@ -13,10 +10,8 @@ int main(int argc, char *argv[])
 {
     struct reb_simulation *const r = reb_simulation_create();
 
-    // Start the REBOUND visualization server. This
-    // allows you to visualize the simulation by pointing
-    // your web browser to http://localhost:1234
-    reb_simulation_start_server(r, 1234);
+    // visualize the simulation on http://localhost:1234
+    // reb_simulation_start_server(r, 1234);
 
     // Setup constants
     r->integrator = REB_INTEGRATOR_LEAPFROG;
@@ -54,7 +49,7 @@ int main(int argc, char *argv[])
     //   r->heartbeat = heartbeat;
     reb_simulation_output_timing(r, 0.);
     reb_simulation_steps(r, 1000);
-    reb_simulation_output_ascii(r, "output.txt");
+    // reb_simulation_output_ascii(r, "output.txt");
     reb_simulation_output_timing(r, 0.);
 }
 

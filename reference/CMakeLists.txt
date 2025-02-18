@@ -4,7 +4,7 @@ set(CMAKE_CXX_FLAGS "-Wall -Wextra")
 set(CMAKE_CXX_FLAGS_DEBUG "-g")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 
-project(baseline)
+project(example)
 
 include(ExternalProject)
 include(ProcessorCount)
@@ -23,10 +23,10 @@ ExternalProject_Add(
 )
 ExternalProject_Get_Property(rebound SOURCE_DIR)
 
-add_executable(baseline main.c)
-add_dependencies(baseline rebound)
+add_executable(example main.c)
+add_dependencies(example rebound)
 
 set(LIBRARIES m)
 
-target_include_directories(baseline PRIVATE ${SOURCE_DIR}/src)
-target_link_libraries(baseline ${LIBRARIES} ${CMAKE_CURRENT_BINARY_DIR}/librebound.so)
+target_include_directories(example PRIVATE ${SOURCE_DIR}/src)
+target_link_libraries(example ${LIBRARIES} ${CMAKE_CURRENT_BINARY_DIR}/librebound.so)
