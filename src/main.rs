@@ -11,14 +11,15 @@ use std::time::Instant;
 
 fn main() {
     // Simulation parameters
-    const NUM_PARTICLES_PER_AXIS: usize = 10;
-    const BOUND: f64 = 500.0; // The simulation domain is from -BOUND to +BOUND
+    const NUM_PARTICLES_PER_AXIS: usize = 18;
+    const BOX_SIZE: f64 = 100.0;
+    const BOUND: f64 = 1250.0;
     const G: f64 = 1.0; // gravitational constant unchanged (adjust if needed)
-    const THETA: f64 = 0.5;
+    const THETA: f64 = 1.5;
     const SOFTENING: f64 = 0.02;
 
     // Calculate spacing between particles
-    let spacing = BOUND / NUM_PARTICLES_PER_AXIS as f64;
+    let spacing = BOX_SIZE / NUM_PARTICLES_PER_AXIS as f64;
 
     // Initialize bodies in a 3D grid
     let mut bodies: Vec<Body3D> = Vec::new();
@@ -27,20 +28,29 @@ fn main() {
         for y in 0..NUM_PARTICLES_PER_AXIS {
             for z in 0..NUM_PARTICLES_PER_AXIS {
                 let pos = Vec3 {
-                    x: spacing * (x as f64) - BOUND / 2.0,
-                    y: spacing * (y as f64) - BOUND / 2.0,
-                    z: spacing * (z as f64) - BOUND / 2.0,
+                    x: spacing * (x as f64) - BOX_SIZE / 2.0,
+                    y: spacing * (y as f64) - BOX_SIZE / 2.0,
+                    z: spacing * (z as f64) - BOX_SIZE / 2.0,
                 };
                 bodies.push(Body3D {
                     position: pos,
                     _prev_position: pos,
                     velocity: Vec3::zero(),
                     _acceleration: Vec3::zero(),
-                    mass: 500.0,
+                    mass: 1.0,
                 });
             }
         }
     }
+
+    // bodies.push(Body3D {
+    //     position: Vec3::zero(),
+    //     _prev_position: Vec3::zero(),
+    //     velocity: Vec3::zero(),
+    //     _acceleration: Vec3::zero(),
+    //     mass: 1000.0,
+    // });
+
 
     // Instead of rendering, we now run a simulation loop for 1000 frames.
     let fixed_dt = 0.03;
@@ -50,15 +60,15 @@ fn main() {
     let mut writer = BufWriter::new(file);
     writeln!(writer, "frame,body,x,y,z").unwrap();
 
-    let mut frame_times = Vec::with_capacity(simulation_frames);
 
+    let mut frame_times = Vec::with_capacity(simulation_frames);
     for frame in 0..simulation_frames {
         let frame_start = Instant::now();
 
         // Build the Barnes-Hut tree for the current state.
         let mut tree = BHOctree::new(Oct {
             center: Vec3::zero(),
-            half_dimension: BOUND / 2.0,
+            half_dimension: BOUND,
         });
         for body in &bodies {
             tree.insert(body.clone());

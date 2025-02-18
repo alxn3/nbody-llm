@@ -110,7 +110,7 @@ fn update_positions(
     mut sim_state: ResMut<SimulationState>,
     time: Res<Time>,
 ) {
-    let frame_duration = 0.1; // Seconds per simulation frame
+    let frame_duration = 0.05; // Seconds per simulation frame
     let current_frame = sim_state.current_frame_idx;
 
     // Update positions for all bodies
