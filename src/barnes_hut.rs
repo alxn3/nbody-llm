@@ -83,9 +83,7 @@ impl Oct {
 #[derive(Clone, Debug)]
 pub struct Body3D {
     pub position: Vec3,
-    pub _prev_position: Vec3,
     pub velocity: Vec3,
-    pub _acceleration: Vec3,
     pub mass: f64,
 }
 
