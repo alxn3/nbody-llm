@@ -149,7 +149,7 @@ fn main() {
         .max()
         .unwrap();
 
-    if modules_modified > output_latest_modified {
+    if output_latest_modified != SystemTime::UNIX_EPOCH && modules_modified > output_latest_modified {
         println!("\nNevermind! Recompiling all shaders because modules have been modified\n");
         // We need to delete the output directory because changes in modules could be superficial
         std::fs::remove_dir_all(&shader_output_dir)
