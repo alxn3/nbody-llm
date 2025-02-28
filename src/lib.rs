@@ -1,1 +1,8 @@
-pub mod barnes_hut;
+mod shared;
+
+#[macro_export]
+macro_rules! from_slang {
+    ($($token:tt)*) => {
+        concat!("out/",$($token)*,".wgsl")
+    };
+}

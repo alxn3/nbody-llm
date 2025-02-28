@@ -1,3 +1,4 @@
 {
-    "cmake.sourceDirectory": "${workspaceFolder}/reference"
+    "cmake.sourceDirectory": "${workspaceFolder}/reference",
+    // "rust-analyzer.cargo.target": "wasm32-unknown-unknown",
 }
