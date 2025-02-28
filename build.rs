@@ -45,8 +45,8 @@ fn main() {
         }
         std::fs::create_dir(&slang_dir).expect("Failed to create slang directory");
 
-        let os = std::env::var("CARGO_CFG_TARGET_OS").unwrap();
-        let arch = std::env::var("CARGO_CFG_TARGET_ARCH").unwrap();
+        let os = std::env::consts::OS;
+        let arch = std::env::consts::ARCH;
 
         if ["linux", "macos", "windows"].iter().all(|&x| os != x) {
             panic!("Unsupported OS");
@@ -142,14 +142,16 @@ fn main() {
         })
         .collect::<Vec<_>>();
 
-    let modules_modified = shader_modules_dir
-        .read_dir()
-        .expect("Failed to read shader modules directory")
-        .map(|entry| entry.unwrap().metadata().unwrap().modified().unwrap())
-        .max()
-        .unwrap();
+    let modules_modified = match shader_modules_dir.read_dir() {
+        Ok(modules) => modules
+            .map(|entry| entry.unwrap().metadata().unwrap().modified().unwrap())
+            .max()
+            .unwrap(),
+        Err(_) => SystemTime::UNIX_EPOCH,
+    };
 
-    if output_latest_modified != SystemTime::UNIX_EPOCH && modules_modified > output_latest_modified {
+    if output_latest_modified != SystemTime::UNIX_EPOCH && modules_modified > output_latest_modified
+    {
         println!("\nNevermind! Recompiling all shaders because modules have been modified\n");
         // We need to delete the output directory because changes in modules could be superficial
         std::fs::remove_dir_all(&shader_output_dir)
