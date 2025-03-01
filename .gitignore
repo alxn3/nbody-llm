@@ -1,7 +1,8 @@
 .cache
 
 build
-target
+dist
 out
+target
 
 *.wgsl

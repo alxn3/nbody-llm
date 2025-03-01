@@ -1,4 +1,5 @@
-mod shared;
+pub mod render;
+pub mod shared;
 
 #[macro_export]
 macro_rules! from_slang {
