@@ -1,42 +1,77 @@
 use std::sync::Arc;
 
-use winit::window::Window;
+use winit::{event::WindowEvent, window::Window};
 
-use super::scene::Scene;
+use super::{Camera, CameraController, OrbitCameraController, scene::Scene};
 
 #[derive(Debug)]
-pub struct Renderer {
+pub struct Renderer<CameraController = OrbitCameraController> {
     context: Context,
     depth_texture: wgpu::TextureView,
     scenes: Vec<Scene>,
+    camera: Camera,
+    camera_controller: CameraController,
 }
 
-impl Renderer {
+impl<C: CameraController> Renderer<C> {
     pub async fn init_async(window: Arc<Window>) -> Self {
         let context = Context::init_async(window).await;
 
-        let depth_texture = context
-            .create_depth_texture(context.surface_config.width, context.surface_config.height);
+        let width = context.surface_config.width;
+        let height = context.surface_config.height;
+
+        let depth_texture = context.create_depth_texture(width, height);
 
         log::info!("Renderer initialized");
 
         let format = context.surface_config.format;
-        let device = context.device.clone();
+
+        let camera = Camera::new(
+            &context.device,
+            (0.0, 1.0, 2.0).into(),
+            (0.0, 0.0, 0.0).into(),
+            (0.0, 1.0, 0.0).into(),
+            width as f32 / height as f32,
+            45.0,
+            0.1,
+            100.0,
+        );
+
+        let camera_controller = C::new();
+
+        let scenes: Vec<Scene> = vec![Scene::new(&context.device, &camera, format)];
 
         Self {
             context,
             depth_texture,
-            scenes: vec![Scene::new(&device, format)],
+            scenes,
+            camera,
+            camera_controller,
         }
     }
 
     pub fn resize(&mut self, size: winit::dpi::PhysicalSize<u32>) {
         self.context.resize(size);
         self.depth_texture = self.context.create_depth_texture(size.width, size.height);
+        self.camera
+            .set_aspect(size.width as f32 / size.height as f32);
     }
 
     pub fn add_scene(&mut self, scene: Scene) {
         self.scenes.push(scene);
+    }
+
+    pub fn process_input(&mut self, event: &WindowEvent) {
+        self.camera_controller.process_input(event);
+    }
+
+    pub fn update(&mut self) {
+        self.camera_controller.update_camera(&mut self.camera);
+        self.context.queue.write_buffer(
+            &self.camera.buffer,
+            0,
+            bytemuck::cast_slice(&[self.camera.uniform]),
+        );
     }
 
     pub fn render(&mut self) {
@@ -61,7 +96,7 @@ impl Renderer {
                     view: &surface_texture_view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::BLUE),
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
                         store: wgpu::StoreOp::Store,
                     },
                 })],
@@ -78,7 +113,7 @@ impl Renderer {
             });
 
             for scene in &self.scenes {
-                scene.render(&mut render_pass);
+                scene.render(&mut render_pass, &self.camera);
             }
         }
         self.context.queue.submit(std::iter::once(encoder.finish()));

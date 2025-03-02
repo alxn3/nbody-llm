@@ -99,6 +99,8 @@ impl ApplicationHandler<UserEvent> for App {
 
         log::trace!("Window event: {:?}", event);
 
+        renderer.process_input(&event);
+
         match event {
             WindowEvent::Resized(size) => {
                 log::info!("Resized to {:?}", size);
@@ -110,6 +112,8 @@ impl ApplicationHandler<UserEvent> for App {
             }
             WindowEvent::RedrawRequested => {
                 let start = Instant::now();
+                
+                renderer.update();
                 renderer.render();
                 window.request_redraw();
 

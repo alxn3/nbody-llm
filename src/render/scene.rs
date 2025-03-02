@@ -1,18 +1,20 @@
 use wgpu::include_wgsl;
 
+use super::Camera;
+
 #[derive(Debug)]
 pub struct Scene {
     pipeline: wgpu::RenderPipeline,
 }
 
 impl Scene {
-    pub fn new(device: &wgpu::Device, surface_format: wgpu::TextureFormat) -> Self {
+    pub fn new(device: &wgpu::Device, camera: &Camera, surface_format: wgpu::TextureFormat) -> Self {
         let shader = device.create_shader_module(include_wgsl!("../out/shader.wgsl"));
 
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[],
+                bind_group_layouts: &[&camera.bind_group_layout],
                 push_constant_ranges: &[],
             });
 
@@ -26,7 +28,7 @@ impl Scene {
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleStrip,
+                topology: wgpu::PrimitiveTopology::TriangleList,
                 strip_index_format: None,
                 front_face: wgpu::FrontFace::Ccw,
                 cull_mode: Some(wgpu::Face::Back),
@@ -65,8 +67,9 @@ impl Scene {
         }
     }
 
-    pub fn render(&self, render_pass: &mut wgpu::RenderPass) {
+    pub fn render(&self, render_pass: &mut wgpu::RenderPass, camera: &Camera) {
         render_pass.set_pipeline(&self.pipeline);
+        render_pass.set_bind_group(0, &camera.bind_group, &[]);
         render_pass.draw(0..3, 0..1);
     }
 }

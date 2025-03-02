@@ -5,12 +5,19 @@ struct VertexOutput
     float3 vert_pos;
 };
 
+struct CameraUniform {
+    float4x4 view_proj;
+}
+
+[[vk::binding(0)]]
+uniform CameraUniform camera;
+
 [shader("vertex")]
 VertexOutput vertex_main(uint vertexId: SV_VertexID)
 {
     VertexOutput output;
-    output.position = float4(
-        float(1 - int(vertexId)) * 0.5, float(int(vertexId & 1u) * 2 - 1) * 0.5, 0.0, 1.0);
+    output.position = mul(camera.view_proj, float4(
+        float(1 - int(vertexId)) * 0.5, float(int(vertexId & 1u) * 2 - 1) * 0.5, 0.0, 1.0));
     output.vert_pos = output.position.xyz;
     return output;
 }
