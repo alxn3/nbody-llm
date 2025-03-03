@@ -1,14 +1,26 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
+use wgpu::ShaderModule;
 use winit::{event::WindowEvent, window::Window};
 
-use super::{Camera, CameraController, OrbitCameraController, scene::Scene};
+use super::{
+    Camera, CameraController, Drawable, OrbitCameraController, add_required_shaders,
+    create_render_pipeline, pipeline::PipelineType,
+};
+
+#[derive(Debug)]
+pub struct RenderObject {
+    pub pipeline_type: PipelineType,
+    pub vertex_buffer: wgpu::Buffer,
+    pub index_buffer: wgpu::Buffer,
+    pub num_indices: u32,
+}
 
 #[derive(Debug)]
 pub struct Renderer<CameraController = OrbitCameraController> {
-    context: Context,
+    pub context: Context,
     depth_texture: wgpu::TextureView,
-    scenes: Vec<Scene>,
+    pipelines: HashMap<PipelineType, wgpu::RenderPipeline>,
     camera: Camera,
     camera_controller: CameraController,
 }
@@ -24,8 +36,6 @@ impl<C: CameraController> Renderer<C> {
 
         log::info!("Renderer initialized");
 
-        let format = context.surface_config.format;
-
         let camera = Camera::new(
             &context.device,
             (0.0, 1.0, 2.0).into(),
@@ -39,12 +49,10 @@ impl<C: CameraController> Renderer<C> {
 
         let camera_controller = C::new();
 
-        let scenes: Vec<Scene> = vec![Scene::new(&context.device, &camera, format)];
-
         Self {
             context,
             depth_texture,
-            scenes,
+            pipelines: HashMap::new(),
             camera,
             camera_controller,
         }
@@ -55,10 +63,6 @@ impl<C: CameraController> Renderer<C> {
         self.depth_texture = self.context.create_depth_texture(size.width, size.height);
         self.camera
             .set_aspect(size.width as f32 / size.height as f32);
-    }
-
-    pub fn add_scene(&mut self, scene: Scene) {
-        self.scenes.push(scene);
     }
 
     pub fn process_input(&mut self, event: &WindowEvent) {
@@ -74,7 +78,7 @@ impl<C: CameraController> Renderer<C> {
         );
     }
 
-    pub fn render(&mut self) {
+    pub fn render(&mut self, objects: Vec<&mut dyn Drawable>) {
         let Ok(surface_texture) = self.context.surface.get_current_texture() else {
             return;
         };
@@ -112,23 +116,63 @@ impl<C: CameraController> Renderer<C> {
                 occlusion_query_set: None,
             });
 
-            for scene in &self.scenes {
-                scene.render(&mut render_pass, &self.camera);
+            let mut render_groups: HashMap<PipelineType, Vec<&mut dyn Drawable>> = HashMap::new();
+
+            for obj in objects {
+                render_groups
+                    .entry(obj.get_pipeline_type())
+                    .or_insert_with(Vec::new)
+                    .push(obj);
+            }
+
+            for (pipeline_type, objects) in render_groups {
+                let pipeline = self.get_pipeline(pipeline_type);
+
+                render_pass.set_pipeline(pipeline);
+                render_pass.set_bind_group(0, &self.camera.bind_group, &[]);
+
+                for obj in objects {
+                    obj.draw(&mut render_pass, &mut self.context.queue);
+                }
             }
         }
         self.context.queue.submit(std::iter::once(encoder.finish()));
         surface_texture.present();
     }
+
+    fn get_pipeline(&mut self, pipeline_type: PipelineType) -> &wgpu::RenderPipeline {
+        if self.pipelines.contains_key(&pipeline_type) {
+            return self.pipelines.get(&pipeline_type).unwrap();
+        }
+
+        add_required_shaders(pipeline_type, &mut self.context);
+        let pipeline = create_render_pipeline(
+            pipeline_type,
+            &self.context,
+            &self
+                .context
+                .device
+                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("Render Pipeline Layout"),
+                    bind_group_layouts: &[&self.camera.bind_group_layout],
+                    push_constant_ranges: &[],
+                }),
+        );
+
+        self.pipelines.insert(pipeline_type, pipeline);
+        self.pipelines.get(&pipeline_type).unwrap()
+    }
 }
 
 #[derive(Debug)]
-struct Context {
+pub struct Context {
     _instance: wgpu::Instance,
     _adapter: wgpu::Adapter,
-    device: wgpu::Device,
+    pub device: wgpu::Device,
     queue: wgpu::Queue,
     surface: wgpu::Surface<'static>,
-    surface_config: wgpu::SurfaceConfiguration,
+    pub surface_config: wgpu::SurfaceConfiguration,
+    shaders: HashMap<&'static str, ShaderModule>,
 }
 
 impl Context {
@@ -190,6 +234,7 @@ impl Context {
             queue,
             surface,
             surface_config,
+            shaders: HashMap::new(),
         }
     }
 
@@ -219,5 +264,18 @@ impl Context {
             }),
         );
         texture.create_view(&wgpu::TextureViewDescriptor::default())
+    }
+
+    pub fn add_shader(&mut self, shader: super::Shader) -> &ShaderModule {
+        if self.shaders.contains_key(shader.name) {
+            return self.shaders.get(shader.name).unwrap();
+        }
+        self.shaders
+            .insert(shader.name, self.device.create_shader_module(shader.desc));
+        self.shaders.get(shader.name).unwrap()
+    }
+
+    pub fn get_shader(&self, name: &'static str) -> Option<&ShaderModule> {
+        self.shaders.get(name)
     }
 }
