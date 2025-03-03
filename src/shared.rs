@@ -354,10 +354,7 @@ where
         }
 
         for i in 0..self.bodies.points.len() {
-            for j in 0..self.bodies.points.len() {
-                if i == j {
-                    continue;
-                }
+            for j in 0..i {
                 let r = self.bodies.points[i].position() - self.bodies.points[j].position();
                 let r_dist = r.norm();
                 let r_cubed = r_dist * r_dist * r_dist;
