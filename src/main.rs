@@ -63,8 +63,8 @@ fn main() {
     // }
 
     let mut sim = shared::BruteForceSimulation::new(points, LeapFrogIntegrator::new());
-    sim.set_dt(0.0001);
-    sim.set_g_soft(0.02);
+    *sim.dt_mut() = 0.0001;
+    *sim.g_soft_mut() = 0.02;
 
     #[cfg(feature = "render")]
     vis::run(sim);

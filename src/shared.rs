@@ -1,6 +1,7 @@
 // This file defines shared behavior for the manual and LLM implementations of the N-body simulation.
 
 use bytemuck::Pod;
+use egui::emath::Numeric;
 use nalgebra::{SVector, SimdComplexField, SimdRealField};
 
 use std::{fmt::Debug, ops::AddAssign};
@@ -16,6 +17,7 @@ pub trait Float:
     + std::fmt::Display
     + Clone
     + PartialEq
+    + Numeric
     + bytemuck::Zeroable
     + SimdRealField
     + 'static
@@ -25,7 +27,7 @@ pub trait Float:
 impl Float for f64 {}
 impl Float for f32 {}
 
-pub trait Particle<F: Float, const D: usize>: Debug {
+pub trait Particle<F: Float, const D: usize>: Debug + Clone {
     fn new(position: SVector<F, D>, velocity: SVector<F, D>, mass: F, radius: F) -> Self;
     fn position(&self) -> &SVector<F, D>;
     fn velocity(&self) -> &SVector<F, D>;
@@ -44,20 +46,27 @@ where
 {
     fn new(points: Vec<P>, integrator: I) -> Self;
     fn init(&mut self);
-    fn step(&mut self);
+    fn step(&mut self) {
+        self.step_by(self.dt());
+    }
+    fn step_by(&mut self, dt: F);
+    fn update_forces(&mut self);
     fn add_point(&mut self, point: P);
     fn remove_point(&mut self, index: usize);
     fn get_points(&self) -> &Vec<P>;
     fn g(&self) -> F;
     fn g_soft(&self) -> F;
     fn dt(&self) -> F;
-    fn set_g(&mut self, g: F);
-    fn set_g_soft(&mut self, g: F);
-    fn set_dt(&mut self, dt: F);
+    fn elapsed(&self) -> F;
+    fn g_mut(&mut self) -> &mut F;
+    fn g_soft_mut(&mut self) -> &mut F;
+    fn dt_mut(&mut self) -> &mut F;
     #[cfg(feature = "render")]
     fn get_drawables(&mut self) -> Vec<&mut dyn Drawable>;
     #[cfg(feature = "render")]
     fn init_drawables(&mut self, context: &mut Context);
+    #[cfg(feature = "render")]
+    fn reset(&mut self);
 }
 
 pub trait Integrator<F: Float, const D: usize, P: Particle<F, D>> {
@@ -223,6 +232,9 @@ where
     g: F,
     dt: F,
     g_soft: F,
+    elapsed: F,
+    #[cfg(feature = "render")]
+    starting_points: Vec<P>,
 }
 
 #[cfg(feature = "render")]
@@ -306,16 +318,21 @@ where
 {
     fn new(points: Vec<P>, integrator: I) -> Self {
         Self {
+            #[cfg(feature = "render")]
+            starting_points: points.clone(),
+
             bodies: Bodies::new(points),
             integrator,
             g: F::from(1.0).unwrap(),
             dt: F::from(0.001).unwrap(),
             g_soft: F::from(0.0).unwrap(),
+            elapsed: F::from(0.0).unwrap(),
         }
     }
 
     fn init(&mut self) {
         self.integrator.init();
+        self.elapsed = F::from(0.0).unwrap();
     }
 
     fn g(&self) -> F {
@@ -330,28 +347,28 @@ where
         self.dt
     }
 
-    fn set_g(&mut self, g: F) {
-        self.g = g;
+    fn g_mut(&mut self) -> &mut F {
+        &mut self.g
     }
 
-    fn set_g_soft(&mut self, g: F) {
-        self.g_soft = g;
+    fn g_soft_mut(&mut self) -> &mut F {
+        &mut self.g_soft
     }
 
-    fn set_dt(&mut self, dt: F) {
-        self.dt = dt;
+    fn dt_mut(&mut self) -> &mut F {
+        &mut self.dt
     }
 
-    fn step(&mut self) {
-        let dt = self.dt();
-        let g_soft2 = self.g_soft() * self.g_soft();
-        self.integrator
-            .integrate_pre_force(&mut self.bodies.points, dt);
+    fn elapsed(&self) -> F {
+        self.elapsed
+    }
 
+    fn update_forces(&mut self) {
         for point in self.bodies.points.iter_mut() {
             point.acceleration_mut().fill(F::from(0.0).unwrap());
         }
 
+        let g_soft2 = self.g_soft() * self.g_soft();
         for i in 0..self.bodies.points.len() {
             for j in 0..i {
                 let r = self.bodies.points[i].position() - self.bodies.points[j].position();
@@ -364,9 +381,15 @@ where
                 *self.bodies.points[j].acceleration_mut() += r * force * m_i;
             }
         }
+    }
 
+    fn step_by(&mut self, dt: F) {
+        self.integrator
+            .integrate_pre_force(&mut self.bodies.points, dt);
+        self.update_forces();
         self.integrator
             .integrate_after_force(&mut self.bodies.points, dt);
+        self.elapsed += dt;
 
         #[cfg(feature = "render")]
         {
@@ -394,5 +417,10 @@ where
     #[cfg(feature = "render")]
     fn init_drawables(&mut self, context: &mut Context) {
         self.bodies.init(context);
+    }
+
+    #[cfg(feature = "render")]
+    fn reset(&mut self) {
+        self.bodies.points = self.starting_points.clone();
     }
 }

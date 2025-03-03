@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, fmt::Debug, sync::Arc};
 
 use wgpu::{ShaderModule, util::DeviceExt};
 use winit::{event::WindowEvent, window::Window};
@@ -15,15 +15,6 @@ struct WorldUniform {
     _padding: [f32; 2],
 }
 
-#[derive(Debug)]
-pub struct RenderObject {
-    pub pipeline_type: PipelineType,
-    pub vertex_buffer: wgpu::Buffer,
-    pub index_buffer: wgpu::Buffer,
-    pub num_indices: u32,
-}
-
-#[derive(Debug)]
 pub struct Renderer<CameraController = OrbitCameraController> {
     pub context: Context,
     depth_texture: wgpu::TextureView,
@@ -34,6 +25,23 @@ pub struct Renderer<CameraController = OrbitCameraController> {
     resolution_buffer: wgpu::Buffer,
     world_bind_group: wgpu::BindGroup,
     world_bind_group_layout: wgpu::BindGroupLayout,
+    egui_renderer: egui_wgpu::Renderer,
+}
+
+impl<C: CameraController> Debug for Renderer<C> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Renderer")
+            .field("context", &self.context)
+            .field("depth_texture", &self.depth_texture)
+            .field("pipelines", &self.pipelines)
+            .field("camera", &self.camera)
+            .field("camera_controller", &self.camera_controller)
+            .field("resolution_uniform", &self.resolution_uniform)
+            .field("resolution_buffer", &self.resolution_buffer)
+            .field("world_bind_group", &self.world_bind_group)
+            .field("world_bind_group_layout", &self.world_bind_group_layout)
+            .finish()
+    }
 }
 
 impl<C: CameraController> Renderer<C> {
@@ -65,13 +73,14 @@ impl<C: CameraController> Renderer<C> {
             _padding: [0.0; 2],
         };
 
-        let resolution_buffer = context
-            .device
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("World Buffer"),
-                contents: bytemuck::cast_slice(&[resolution_uniform]),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            });
+        let resolution_buffer =
+            context
+                .device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("World Buffer"),
+                    contents: bytemuck::cast_slice(&[resolution_uniform]),
+                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                });
 
         let world_bind_group_layout =
             context
@@ -119,6 +128,14 @@ impl<C: CameraController> Renderer<C> {
                 ],
             });
 
+        let egui_renderer = egui_wgpu::Renderer::new(
+            &context.device,
+            context.surface_config.format,
+            Some(super::DEPTH_FORMAT),
+            1,
+            false,
+        );
+
         Self {
             context,
             depth_texture,
@@ -129,6 +146,7 @@ impl<C: CameraController> Renderer<C> {
             resolution_buffer,
             world_bind_group,
             world_bind_group_layout,
+            egui_renderer,
         }
     }
 
@@ -143,13 +161,6 @@ impl<C: CameraController> Renderer<C> {
             0,
             bytemuck::cast_slice(&[self.resolution_uniform]),
         );
-    }
-
-    pub fn process_input(&mut self, event: &WindowEvent) {
-        self.camera_controller.process_input(event);
-    }
-
-    pub fn update(&mut self) {
         self.camera_controller.update_camera(&mut self.camera);
         self.context.queue.write_buffer(
             &self.camera.buffer,
@@ -158,10 +169,41 @@ impl<C: CameraController> Renderer<C> {
         );
     }
 
-    pub fn render(&mut self, objects: Vec<&mut dyn Drawable>) {
+    pub fn process_input(&mut self, event: &WindowEvent) {
+        if self.camera_controller.process_input(event) {
+            self.camera_controller.update_camera(&mut self.camera);
+            self.context.queue.write_buffer(
+                &self.camera.buffer,
+                0,
+                bytemuck::cast_slice(&[self.camera.uniform]),
+            );
+        }
+    }
+
+    pub fn render(
+        &mut self,
+        screen_descriptor: egui_wgpu::ScreenDescriptor,
+        paint_jobs: Vec<egui::epaint::ClippedPrimitive>,
+        textures_delta: egui::TexturesDelta,
+        objects: Vec<&mut dyn Drawable>,
+    ) {
         let Ok(surface_texture) = self.context.surface.get_current_texture() else {
             return;
         };
+
+        for (id, image_delta) in &textures_delta.set {
+            self.egui_renderer.update_texture(
+                &self.context.device,
+                &self.context.queue,
+                *id,
+                image_delta,
+            );
+        }
+
+        for id in &textures_delta.free {
+            self.egui_renderer.free_texture(id);
+        }
+
         let surface_texture_view = surface_texture
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
@@ -172,6 +214,14 @@ impl<C: CameraController> Renderer<C> {
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                     label: Some("Render Encoder"),
                 });
+
+        self.egui_renderer.update_buffers(
+            &self.context.device,
+            &self.context.queue,
+            &mut encoder,
+            &paint_jobs,
+            &screen_descriptor,
+        );
 
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -215,6 +265,11 @@ impl<C: CameraController> Renderer<C> {
                     obj.draw(&mut render_pass, &mut self.context.queue);
                 }
             }
+            self.egui_renderer.render(
+                &mut render_pass.forget_lifetime(),
+                &paint_jobs,
+                &screen_descriptor,
+            );
         }
         self.context.queue.submit(std::iter::once(encoder.finish()));
         surface_texture.present();
@@ -234,9 +289,7 @@ impl<C: CameraController> Renderer<C> {
                 .device
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: Some("Render Pipeline Layout"),
-                    bind_group_layouts: &[
-                        &self.world_bind_group_layout,
-                    ],
+                    bind_group_layouts: &[&self.world_bind_group_layout],
                     push_constant_ranges: &[],
                 }),
         );

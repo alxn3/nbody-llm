@@ -100,7 +100,7 @@ impl Camera {
 
 pub trait CameraController: std::fmt::Debug {
     fn new() -> Self;
-    fn process_input(&mut self, event: &WindowEvent);
+    fn process_input(&mut self, event: &WindowEvent) -> bool;
     fn update_camera(&mut self, camera: &mut Camera);
 }
 
@@ -124,16 +124,17 @@ impl CameraController for OrbitCameraController {
         }
     }
 
-    fn process_input(&mut self, event: &WindowEvent) {
+    fn process_input(&mut self, event: &WindowEvent) -> bool {
         match event {
             WindowEvent::MouseInput { state, button, .. } => {
                 self.pressed = *state == winit::event::ElementState::Pressed
                     && *button == winit::event::MouseButton::Left;
+                false
             }
             WindowEvent::CursorMoved { position, .. } => {
                 if !self.pressed {
                     self.last_cursor_pos = None;
-                    return;
+                    return false;
                 }
                 if let Some(last_cursor_pos) = self.last_cursor_pos {
                     let delta = (
@@ -145,19 +146,21 @@ impl CameraController for OrbitCameraController {
                     self.pitch = self.pitch.clamp(-1.5, 1.5);
                 }
                 self.last_cursor_pos = Some(*position);
+                true
             }
             WindowEvent::MouseWheel { delta, .. } => match delta {
                 winit::event::MouseScrollDelta::LineDelta(_, y) => {
                     self.zoom -= y * 0.001;
                     self.zoom = self.zoom.clamp(0.1, 10.0);
+                    true
                 }
                 winit::event::MouseScrollDelta::PixelDelta(d) => {
                     self.zoom -= d.y as f32 * 0.001;
                     self.zoom = self.zoom.clamp(0.1, 10.0);
+                    true
                 }
             },
-            
-            _ => {}
+            _ => false,
         }
     }
 
