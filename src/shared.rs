@@ -1,7 +1,7 @@
 // This file defines shared behavior for the manual and LLM implementations of the N-body simulation.
 
 use bytemuck::Pod;
-use nalgebra::{RealField, SVector};
+use nalgebra::{SVector, SimdComplexField, SimdRealField};
 
 use std::{fmt::Debug, ops::AddAssign};
 
@@ -17,7 +17,7 @@ pub trait Float:
     + Clone
     + PartialEq
     + bytemuck::Zeroable
-    + RealField
+    + SimdRealField
     + 'static
 {
 }
@@ -49,8 +49,10 @@ where
     fn remove_point(&mut self, index: usize);
     fn get_points(&self) -> &Vec<P>;
     fn g(&self) -> F;
+    fn g_soft(&self) -> F;
     fn dt(&self) -> F;
     fn set_g(&mut self, g: F);
+    fn set_g_soft(&mut self, g: F);
     fn set_dt(&mut self, dt: F);
     #[cfg(feature = "render")]
     fn get_drawables(&mut self) -> Vec<&mut dyn Drawable>;
@@ -220,6 +222,7 @@ where
     integrator: I,
     g: F,
     dt: F,
+    g_soft: F,
 }
 
 #[cfg(feature = "render")]
@@ -307,6 +310,7 @@ where
             integrator,
             g: F::from(1.0).unwrap(),
             dt: F::from(0.001).unwrap(),
+            g_soft: F::from(0.0).unwrap(),
         }
     }
 
@@ -318,6 +322,10 @@ where
         self.g
     }
 
+    fn g_soft(&self) -> F {
+        self.g_soft
+    }
+
     fn dt(&self) -> F {
         self.dt
     }
@@ -326,12 +334,17 @@ where
         self.g = g;
     }
 
+    fn set_g_soft(&mut self, g: F) {
+        self.g_soft = g;
+    }
+
     fn set_dt(&mut self, dt: F) {
         self.dt = dt;
     }
 
     fn step(&mut self) {
         let dt = self.dt();
+        let g_soft2 = self.g_soft() * self.g_soft();
         self.integrator
             .integrate_pre_force(&mut self.bodies.points, dt);
 
@@ -342,7 +355,7 @@ where
         for i in 0..self.bodies.points.len() {
             for j in 0..i {
                 let r = self.bodies.points[i].position() - self.bodies.points[j].position();
-                let r_dist = r.norm();
+                let r_dist = SimdComplexField::simd_sqrt(r.norm_squared() + g_soft2);
                 let r_cubed = r_dist * r_dist * r_dist;
                 let m_i = self.bodies.points[i].get_mass();
                 let m_j = self.bodies.points[j].get_mass();
