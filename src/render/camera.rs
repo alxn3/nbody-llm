@@ -57,8 +57,6 @@ pub struct Camera {
     state: CameraState,
     pub uniform: CameraUniform,
     pub buffer: wgpu::Buffer,
-    pub bind_group_layout: wgpu::BindGroupLayout,
-    pub bind_group: wgpu::BindGroup,
 }
 
 impl Camera {
@@ -84,35 +82,10 @@ impl Camera {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-            label: Some("Camera Bind Group Layout"),
-        });
-
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: buffer.as_entire_binding(),
-            }],
-            label: Some("Camera Bind Group"),
-        });
-
         Self {
             state,
             uniform,
             buffer,
-            bind_group_layout,
-            bind_group,
         }
     }
 
@@ -136,6 +109,7 @@ pub struct OrbitCameraController {
     yaw: f32,
     pitch: f32,
     last_cursor_pos: Option<winit::dpi::PhysicalPosition<f64>>,
+    zoom: f32,
     pressed: bool,
 }
 
@@ -145,6 +119,7 @@ impl CameraController for OrbitCameraController {
             yaw: 0.0,
             pitch: 0.0,
             last_cursor_pos: None,
+            zoom: 1.0,
             pressed: false,
         }
     }
@@ -171,6 +146,17 @@ impl CameraController for OrbitCameraController {
                 }
                 self.last_cursor_pos = Some(*position);
             }
+            WindowEvent::MouseWheel { delta, .. } => match delta {
+                winit::event::MouseScrollDelta::LineDelta(_, y) => {
+                    self.zoom -= y * 0.001;
+                    self.zoom = self.zoom.clamp(0.1, 10.0);
+                }
+                winit::event::MouseScrollDelta::PixelDelta(d) => {
+                    self.zoom -= d.y as f32 * 0.001;
+                    self.zoom = self.zoom.clamp(0.1, 10.0);
+                }
+            },
+            
             _ => {}
         }
     }
@@ -181,7 +167,7 @@ impl CameraController for OrbitCameraController {
             self.pitch.sin(),
             self.yaw.cos() * self.pitch.cos(),
         ) * 5.0;
-        camera.state.eye = eye;
+        camera.state.eye = eye * self.zoom;
         camera.uniform.view_proj = camera.state.get_view_projection_matrix().to_cols_array_2d();
     }
 }

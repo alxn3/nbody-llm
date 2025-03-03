@@ -5,7 +5,6 @@ mod renderer;
 pub use camera::*;
 pub use pipeline::*;
 pub use renderer::*;
-use wgpu::RenderPass;
 
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
@@ -25,11 +24,13 @@ pub trait Drawable: std::fmt::Debug {
     fn get_num_instances(&self) -> u32 {
         1
     }
-    fn get_index_buffer(&self) -> &wgpu::Buffer;
+    fn get_index_buffer(&self) -> Option<&wgpu::Buffer> {
+        None
+    }
     fn get_num_indices(&self) -> u32;
     fn buffer_needs_update(&self) -> bool;
     fn update_buffers(&mut self, queue: &mut wgpu::Queue);
-    fn draw(&mut self, render_pass: &mut RenderPass, queue: &mut wgpu::Queue) {
+    fn draw(&mut self, render_pass: &mut wgpu::RenderPass, queue: &mut wgpu::Queue) {
         if self.buffer_needs_update() {
             self.update_buffers(queue);
         }
@@ -37,7 +38,6 @@ pub trait Drawable: std::fmt::Debug {
         if let Some(instance_buffer) = self.get_instance_buffer() {
             render_pass.set_vertex_buffer(1, instance_buffer.slice(..));
         }
-        render_pass.set_index_buffer(self.get_index_buffer().slice(..), wgpu::IndexFormat::Uint16);
-        render_pass.draw_indexed(0..self.get_num_indices(), 0, 0..self.get_num_instances());
+        render_pass.draw(0..4, 0..self.get_num_indices());
     }
 }

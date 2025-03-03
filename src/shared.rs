@@ -180,7 +180,7 @@ impl<F: Float, const D: usize> Particle<F, D> for PointParticle<F, D> {
 #[derive(Debug)]
 pub struct BufferData {
     vertex_buffer: wgpu::Buffer,
-    index_buffer: wgpu::Buffer,
+    index_buffer: Option<wgpu::Buffer>,
     instance_buffer: Option<wgpu::Buffer>,
     num_indices: u32,
     needs_update: bool,
@@ -248,19 +248,9 @@ where
                 usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             });
 
-        let index_buffer = context
-            .device
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Index Buffer"),
-                contents: bytemuck::cast_slice(
-                    &(0..self.points.len() as u16).collect::<Vec<u16>>(),
-                ),
-                usage: wgpu::BufferUsages::INDEX,
-            });
-
         self.buffer_data = Some(BufferData {
             vertex_buffer,
-            index_buffer,
+            index_buffer: None,
             instance_buffer: None,
             num_indices: self.points.len() as u32,
             needs_update: false,
@@ -273,10 +263,6 @@ where
 
     fn get_vertex_buffer(&self) -> &wgpu::Buffer {
         &self.buffer_data.as_ref().unwrap().vertex_buffer
-    }
-
-    fn get_index_buffer(&self) -> &wgpu::Buffer {
-        &self.buffer_data.as_ref().unwrap().index_buffer
     }
 
     fn get_num_indices(&self) -> u32 {

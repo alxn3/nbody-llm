@@ -1,12 +1,19 @@
 use std::{collections::HashMap, sync::Arc};
 
-use wgpu::ShaderModule;
+use wgpu::{ShaderModule, util::DeviceExt};
 use winit::{event::WindowEvent, window::Window};
 
 use super::{
     Camera, CameraController, Drawable, OrbitCameraController, add_required_shaders,
     create_render_pipeline, pipeline::PipelineType,
 };
+
+#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+#[repr(C)]
+struct WorldUniform {
+    resolution: [f32; 2],
+    _padding: [f32; 2],
+}
 
 #[derive(Debug)]
 pub struct RenderObject {
@@ -23,6 +30,10 @@ pub struct Renderer<CameraController = OrbitCameraController> {
     pipelines: HashMap<PipelineType, wgpu::RenderPipeline>,
     camera: Camera,
     camera_controller: CameraController,
+    resolution_uniform: WorldUniform,
+    resolution_buffer: wgpu::Buffer,
+    world_bind_group: wgpu::BindGroup,
+    world_bind_group_layout: wgpu::BindGroupLayout,
 }
 
 impl<C: CameraController> Renderer<C> {
@@ -49,12 +60,75 @@ impl<C: CameraController> Renderer<C> {
 
         let camera_controller = C::new();
 
+        let resolution_uniform = WorldUniform {
+            resolution: [width as f32, height as f32],
+            _padding: [0.0; 2],
+        };
+
+        let resolution_buffer = context
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("World Buffer"),
+                contents: bytemuck::cast_slice(&[resolution_uniform]),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            });
+
+        let world_bind_group_layout =
+            context
+                .device
+                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    label: Some("World Bind Group Layout"),
+                    entries: &[
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 0,
+                            visibility: wgpu::ShaderStages::VERTEX,
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Uniform,
+                                has_dynamic_offset: false,
+                                min_binding_size: None,
+                            },
+                            count: None,
+                        },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 1,
+                            visibility: wgpu::ShaderStages::VERTEX,
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Uniform,
+                                has_dynamic_offset: false,
+                                min_binding_size: None,
+                            },
+                            count: None,
+                        },
+                    ],
+                });
+
+        let world_bind_group = context
+            .device
+            .create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("World Bind Group"),
+                layout: &world_bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: camera.buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: resolution_buffer.as_entire_binding(),
+                    },
+                ],
+            });
+
         Self {
             context,
             depth_texture,
             pipelines: HashMap::new(),
             camera,
             camera_controller,
+            resolution_uniform,
+            resolution_buffer,
+            world_bind_group,
+            world_bind_group_layout,
         }
     }
 
@@ -63,6 +137,12 @@ impl<C: CameraController> Renderer<C> {
         self.depth_texture = self.context.create_depth_texture(size.width, size.height);
         self.camera
             .set_aspect(size.width as f32 / size.height as f32);
+        self.resolution_uniform.resolution = [size.width as f32, size.height as f32];
+        self.context.queue.write_buffer(
+            &self.resolution_buffer,
+            0,
+            bytemuck::cast_slice(&[self.resolution_uniform]),
+        );
     }
 
     pub fn process_input(&mut self, event: &WindowEvent) {
@@ -129,7 +209,7 @@ impl<C: CameraController> Renderer<C> {
                 let pipeline = self.get_pipeline(pipeline_type);
 
                 render_pass.set_pipeline(pipeline);
-                render_pass.set_bind_group(0, &self.camera.bind_group, &[]);
+                render_pass.set_bind_group(0, &self.world_bind_group, &[]);
 
                 for obj in objects {
                     obj.draw(&mut render_pass, &mut self.context.queue);
@@ -154,7 +234,9 @@ impl<C: CameraController> Renderer<C> {
                 .device
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: Some("Render Pipeline Layout"),
-                    bind_group_layouts: &[&self.camera.bind_group_layout],
+                    bind_group_layouts: &[
+                        &self.world_bind_group_layout,
+                    ],
                     push_constant_ranges: &[],
                 }),
         );
