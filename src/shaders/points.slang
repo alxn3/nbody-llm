@@ -49,9 +49,13 @@ float4 fragment_main(VertexOutput input)
     float d = sqrt(dot(uv, uv));
     if (d > 1)
         discard;
-    float3 c = float3(3.0, 1.5, 1.0);
-    c.xyz *= (input.position.z);
-    c.xyz *= 0.5;
-    c.xyz += 0.5;
+
+    float3 norm = float3(input.diff.x, input.diff.y, sqrt(1.0 - dot(input.diff, input.diff)));
+
+    float3 c = float3(1.5, 0.75, 0.5) * input.position.z;\
+
+    c += 0.5;
+    c *= norm.z * 0.5 + 0.5;
+    
     return float4(c, 1.0);
 }
