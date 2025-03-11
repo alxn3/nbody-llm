@@ -28,7 +28,7 @@ where
     S: Simulation<F, D, P, I>,
 {
     pub start_time: Instant,
-    pub step_count: u64,
+    pub step_count: i64,
     pub max_fps: f64,
     pub frame_count: u64,
     pub frame_list: [Duration; FRAME_SAMPLES],
@@ -39,7 +39,9 @@ where
     pub starting_g_soft: F,
     pub paused: bool,
     pub step_by: u64,
-    _phantom: std::marker::PhantomData<(F, P, I, S)>,
+    pub simulation: S,
+    pub simulation_base: S,
+    _phantom: std::marker::PhantomData<(F, P, I)>,
 }
 
 impl<F: Float, const D: usize, P, I, S> SimulationState<F, D, P, I, S>
@@ -48,17 +50,6 @@ where
     I: Integrator<F, D, P>,
     S: Simulation<F, D, P, I>,
 {
-    pub fn set_starting_values(&mut self, sim: &S)
-    where
-        F: Float,
-        P: Particle<F, D>,
-        I: Integrator<F, D, P>,
-    {
-        self.starting_dt = sim.dt();
-        self.starting_g = sim.g();
-        self.starting_g_soft = sim.g_soft();
-    }
-
     pub fn update_frame_time(&mut self, frame_time: Duration) {
         self.frame_list[self.frame_index] = frame_time;
         self.frame_index = (self.frame_index + 1) % FRAME_SAMPLES;
@@ -81,6 +72,192 @@ where
         self.step_count = 0;
         self.frame_count = 0;
     }
+
+    pub fn init(&mut self, renderer: &Renderer) {
+        self.simulation.init();
+        self.simulation.render_init(renderer);
+        self.reset();
+    }
+
+    pub fn draw_gui(&mut self, gui_state: &mut egui_winit::State, renderer: &Renderer) {
+        egui::Window::new("Simulation")
+            .max_width(100.0)
+            .show(gui_state.egui_ctx(), |ui| {
+                egui::Grid::new("stats")
+                    .min_col_width(70.0)
+                    .spacing([20.0, 4.0])
+                    .striped(true)
+                    .show(ui, |ui| {
+                        ui.label("FPS");
+                        ui.with_layout(egui::Layout::top_down_justified(egui::Align::Max), |ui| {
+                            ui.label(format!("{:.2}", self.get_fps()));
+                        });
+                        ui.end_row();
+                        ui.label("Last draw time");
+                        ui.with_layout(egui::Layout::top_down_justified(egui::Align::Max), |ui| {
+                            ui.label(format!(
+                                "{:.05}",
+                                self.frame_list
+                                    [(FRAME_SAMPLES + self.frame_index - 1) % FRAME_SAMPLES]
+                                    .as_secs_f64()
+                            ));
+                        });
+                        ui.end_row();
+                        ui.label("Time");
+                        ui.with_layout(egui::Layout::top_down_justified(egui::Align::Max), |ui| {
+                            ui.label(format!("{:.05}", self.simulation.elapsed()));
+                        });
+                        ui.end_row();
+                        ui.label("Steps");
+                        ui.with_layout(egui::Layout::top_down_justified(egui::Align::Max), |ui| {
+                            ui.label(format!("{}", self.step_count));
+                        });
+                        ui.end_row();
+                    });
+
+                ui.add_space(10.0);
+
+                ui.collapsing("Settings", |ui| {
+                    egui::Grid::new("grid").show(ui, |ui| {
+                        ui.label("Max FPS");
+                        ui.add(
+                            egui::Slider::new(&mut self.max_fps, 1.0..=240.0)
+                                .trailing_fill(true)
+                                .clamping(egui::SliderClamping::Never),
+                        );
+                        ui.end_row();
+                        ui.label("Max Steps/F");
+                        ui.add(
+                            egui::Slider::new(&mut self.max_steps_per_frame, 1..=1000)
+                                .trailing_fill(true)
+                                .clamping(egui::SliderClamping::Never),
+                        );
+                        ui.end_row();
+                        ui.separator();
+                        ui.end_row();
+                        ui.label("dt");
+                        ui.add(
+                            egui::Slider::new(
+                                self.simulation.dt_mut(),
+                                F::from(-0.005).unwrap()..=F::from(0.005).unwrap(),
+                            )
+                            .logarithmic(true)
+                            .handle_shape(egui::style::HandleShape::Rect { aspect_ratio: 0.50 })
+                            .clamping(egui::SliderClamping::Never),
+                        );
+                        ui.end_row();
+                        ui.label("G");
+                        ui.add(
+                            egui::Slider::new(
+                                self.simulation.g_mut(),
+                                F::from(-1.0).unwrap()..=F::from(2.0).unwrap(),
+                            )
+                            .handle_shape(egui::style::HandleShape::Rect { aspect_ratio: 0.50 })
+                            .clamping(egui::SliderClamping::Never),
+                        );
+                        ui.end_row();
+                        ui.label("Softening");
+                        ui.add(
+                            egui::Slider::new(
+                                self.simulation.g_soft_mut(),
+                                F::from(0.0).unwrap()..=F::from(0.5).unwrap(),
+                            )
+                            .trailing_fill(true)
+                            .clamping(egui::SliderClamping::Never),
+                        );
+                    });
+                    ui.add_space(4.0);
+                    if ui
+                        .button("Reset Settings")
+                        .on_hover_ui(|ui| {
+                            ui.label("Reset the settings to its initial state");
+                        })
+                        .clicked()
+                    {
+                        *self.simulation.dt_mut() = self.starting_dt;
+                        *self.simulation.g_mut() = self.starting_g;
+                        *self.simulation.g_soft_mut() = self.starting_g_soft;
+                    }
+                });
+                ui.separator();
+                ui.add_space(4.0);
+
+                ui.horizontal(|ui| {
+                    if ui
+                        .button(if self.paused { "⏵" } else { "⏸" })
+                        .on_hover_text("Pauses and unpauses the simulation")
+                        .clicked()
+                    {
+                        self.paused = !self.paused;
+                    }
+
+                    if ui
+                        .button("Reset")
+                        .on_hover_text("This button resets the simulation")
+                        .clicked()
+                    {
+                        self.simulation = self.simulation_base.clone();
+                        self.init(renderer);
+                    }
+                });
+
+                if self.paused {
+                    ui.add_space(6.0);
+                    ui.label("Step Controller");
+                    ui.add_space(4.0);
+                    ui.horizontal(|ui| {
+                        if ui
+                    .button("⏪")
+                    .on_hover_text(
+                        "Press and hold to continously rewind the simulation by the step size",
+                    )
+                    .is_pointer_button_down_on()
+                {
+                    let dt = -self.simulation.dt();
+                    for _ in 0..self.step_by {
+                        self.simulation.step_by(dt);
+                        self.step_count -= 1;
+                    }
+                }
+                        if ui
+                            .button("⏴")
+                            .on_hover_text("Press to rewind the simulation by the step size")
+                            .clicked()
+                        {
+                            let dt = -self.simulation.dt();
+                            for _ in 0..self.step_by {
+                                self.simulation.step_by(dt);
+                                self.step_count -= 1;
+                            }
+                        }
+
+                        ui.add(egui::DragValue::new(&mut self.step_by).speed(1))
+                            .on_hover_text("Drag or edit to change the step size");
+                        if ui.button("⏵")
+                    .on_hover_text(
+                        "Press and hold to continously forward the simulation by the step size"
+                    )
+                    .clicked()
+                {
+                    for _ in 0..self.step_by {
+                        self.simulation.step();
+                        self.step_count += 1;
+                    }
+                }
+                        if ui
+                            .button("⏩")
+                            .on_hover_text("Press to forward the simulation by the step size")
+                            .is_pointer_button_down_on()
+                        {
+                            for _ in 0..self.step_by {
+                                self.simulation.step();
+                                self.step_count += 1;
+                            }
+                        }
+                    });
+                }
+            });
+    }
 }
 
 struct App<F: Float, const D: usize, P, I, S>
@@ -94,7 +271,6 @@ where
     event_proxy: Arc<EventLoopProxy<UserEvent>>,
     gui_state: Option<egui_winit::State>,
     state: SimulationState<F, D, P, I, S>,
-    simulation: S,
     _phantom: std::marker::PhantomData<(F, P, I)>,
 }
 
@@ -105,7 +281,7 @@ where
     S: Simulation<F, D, P, I>,
 {
     fn new(event_proxy: Arc<EventLoopProxy<UserEvent>>, simulation: S) -> Self {
-        let mut state = SimulationState {
+        let state = SimulationState {
             start_time: Instant::now(),
             step_count: 0,
             max_fps: 60.0,
@@ -113,15 +289,15 @@ where
             frame_list: [Duration::ZERO; FRAME_SAMPLES],
             frame_index: 0,
             max_steps_per_frame: 100,
-            starting_dt: F::from(0.0).unwrap(),
-            starting_g: F::from(0.0).unwrap(),
-            starting_g_soft: F::from(0.0).unwrap(),
+            starting_dt: simulation.dt(),
+            starting_g: simulation.g(),
+            starting_g_soft: simulation.g_soft(),
             paused: false,
             step_by: 100,
+            simulation_base: simulation.clone(),
+            simulation,
             _phantom: std::marker::PhantomData,
         };
-
-        state.set_starting_values(&simulation);
 
         Self {
             window: None,
@@ -129,16 +305,8 @@ where
             event_proxy,
             gui_state: None,
             state,
-            simulation,
             _phantom: std::marker::PhantomData,
         }
-    }
-
-    fn init(&mut self) {
-        self.simulation.init();
-        self.simulation
-            .init_drawables(&mut self.renderer.as_mut().unwrap().context);
-        self.state.start_time = Instant::now();
     }
 }
 
@@ -207,7 +375,7 @@ where
         #[cfg(not(target_arch = "wasm32"))]
         {
             self.renderer = Some(pollster::block_on(Renderer::init_async(window)));
-            self.init();
+            self.state.init(self.renderer.as_ref().unwrap());
         }
     }
 
@@ -215,23 +383,20 @@ where
         match event {
             #[cfg(target_arch = "wasm32")]
             UserEvent::WebInitialized(renderer) => {
+                self.state.init(&renderer);
                 self.renderer = Some(renderer);
                 self.window.as_ref().unwrap().request_redraw();
-                self.init();
             }
         }
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
-        let (Some(window), Some(renderer), Some(gui_state)) = (
-            self.window.as_mut(),
-            self.renderer.as_mut(),
-            self.gui_state.as_mut(),
-        ) else {
-            log::error!("Window or renderer not initialized");
+        let Some(window) = self.window.as_ref() else {
+            log::error!("Window not initialized");
             return;
         };
 
+        let gui_state = self.gui_state.as_mut().unwrap();
         if gui_state.on_window_event(window, &event).consumed {
             match event {
                 WindowEvent::MouseInput {
@@ -244,6 +409,11 @@ where
                 }
             }
         }
+
+        let Some(renderer) = self.renderer.as_mut() else {
+            log::error!("Renderer not initialized");
+            return;
+        };
 
         log::trace!("Window event: {:?}", event);
 
@@ -261,205 +431,11 @@ where
             WindowEvent::RedrawRequested => {
                 window.request_redraw();
                 let start = Instant::now();
+
                 let gui_input = gui_state.take_egui_input(window);
                 gui_state.egui_ctx().begin_pass(gui_input);
 
-                egui::Window::new("Simulation")
-                    .max_width(100.0)
-                    .show(gui_state.egui_ctx(), |ui| {
-                        egui::Grid::new("stats")
-                            .min_col_width(70.0)
-                            .spacing([20.0, 4.0])
-                            .striped(true)
-                            .show(ui, |ui| {
-                                ui.label("FPS");
-                                ui.with_layout(
-                                    egui::Layout::top_down_justified(egui::Align::Max),
-                                    |ui| {
-                                        ui.label(format!("{:.2}", self.state.get_fps()));
-                                    },
-                                );
-                                ui.end_row();
-                                ui.label("Last draw time");
-                                ui.with_layout(
-                                    egui::Layout::top_down_justified(egui::Align::Max),
-                                    |ui| {
-                                        ui.label(format!("{:.05}", self.state.frame_list[(FRAME_SAMPLES + self.state.frame_index - 1) % FRAME_SAMPLES].as_secs_f64()));
-                                    },
-                                );
-                                ui.end_row();
-                                ui.label("Time");
-                                ui.with_layout(
-                                    egui::Layout::top_down_justified(egui::Align::Max),
-                                    |ui| {
-                                        ui.label(format!("{:.05}", self.simulation.elapsed()));
-                                    },
-                                );
-                                ui.end_row();
-                                ui.label("Steps");
-                                ui.with_layout(
-                                    egui::Layout::top_down_justified(egui::Align::Max),
-                                    |ui| {
-                                        ui.label(format!("{}", self.state.step_count));
-                                    },
-                                );
-                                ui.end_row();
-                            });
-
-                        ui.add_space(10.0);
-
-                        ui.collapsing("Settings", |ui| {
-                            egui::Grid::new("grid").show(ui, |ui| {
-                                ui.label("Max FPS");
-                                ui.add(
-                                    egui::Slider::new(&mut self.state.max_fps, 1.0..=240.0)
-                                        .trailing_fill(true)
-                                        .clamping(egui::SliderClamping::Never),
-                                );
-                                ui.end_row();
-                                ui.label("Max Steps/F");
-                                ui.add(
-                                    egui::Slider::new(
-                                        &mut self.state.max_steps_per_frame,
-                                        1..=1000,
-                                    )
-                                    .trailing_fill(true)
-                                    .clamping(egui::SliderClamping::Never),
-                                );
-                                ui.end_row();
-                                ui.separator();
-                                ui.end_row();
-                                ui.label("dt");
-                                ui.add(
-                                    egui::Slider::new(
-                                        self.simulation.dt_mut(),
-                                        F::from(-0.005).unwrap()..=F::from(0.005).unwrap(),
-                                    )
-                                    .logarithmic(true)
-                                    .handle_shape(egui::style::HandleShape::Rect {
-                                        aspect_ratio: 0.50,
-                                    })
-                                    .clamping(egui::SliderClamping::Never),
-                                );
-                                ui.end_row();
-                                ui.label("G");
-                                ui.add(
-                                    egui::Slider::new(
-                                        self.simulation.g_mut(),
-                                        F::from(-1.0).unwrap()..=F::from(2.0).unwrap(),
-                                    )
-                                    .handle_shape(egui::style::HandleShape::Rect {
-                                        aspect_ratio: 0.50,
-                                    })
-                                    .clamping(egui::SliderClamping::Never),
-                                );
-                                ui.end_row();
-                                ui.label("Softening");
-                                ui.add(
-                                    egui::Slider::new(
-                                        self.simulation.g_soft_mut(),
-                                        F::from(0.0).unwrap()..=F::from(0.5).unwrap(),
-                                    )
-                                    .trailing_fill(true)
-                                    .clamping(egui::SliderClamping::Never),
-                                );
-                            });
-                            ui.add_space(4.0);
-                            if ui
-                                .button("Reset Settings")
-                                .on_hover_ui(|ui| {
-                                    ui.label("Reset the settings to its initial state");
-                                })
-                                .clicked()
-                            {
-                                *self.simulation.dt_mut() = self.state.starting_dt;
-                                *self.simulation.g_mut() = self.state.starting_g;
-                                *self.simulation.g_soft_mut() = self.state.starting_g_soft;
-                            }
-                        });
-                        ui.separator();
-                        ui.add_space(4.0);
-
-                        ui.horizontal(|ui| {
-                            if ui
-                                .button(if self.state.paused { "⏵" } else { "⏸" })
-                                .on_hover_text("Pauses and unpauses the simulation")
-                                .clicked()
-                            {
-                                self.state.paused = !self.state.paused;
-                            }
-
-                            if ui
-                                .button("Reset")
-                                .on_hover_text("This button resets the simulation")
-                                .clicked()
-                            {
-                                self.simulation.reset();
-                                self.simulation.init();
-                                self.state.reset();
-                            }
-                        });
-
-                        if self.state.paused {
-                            ui.add_space(6.0);
-                            ui.label("Step Controller");
-                            ui.add_space(4.0);
-                            ui.horizontal(|ui| {
-                                if ui
-                                    .button("⏪")
-                                    .on_hover_text(
-                                        "Press and hold to continously rewind the simulation by the step size",
-                                    )
-                                    .is_pointer_button_down_on()
-                                {
-                                    let dt = -self.simulation.dt();
-                                    for _ in 0..self.state.step_by {
-                                        self.simulation.step_by(dt);
-                                        self.state.step_count -= 1;
-                                    }
-                                }
-                                if ui
-                                    .button("⏴")
-                                    .on_hover_text(
-                                        "Press to rewind the simulation by the step size",
-                                    )
-                                    .clicked()
-                                {
-                                    let dt = -self.simulation.dt();
-                                    for _ in 0..self.state.step_by {
-                                        self.simulation.step_by(dt);
-                                        self.state.step_count -= 1;
-                                    }
-                                }
-
-                                ui.add(egui::DragValue::new(&mut self.state.step_by).speed(1))
-                                    .on_hover_text("Drag or edit to change the step size");
-                                if ui.button("⏵")
-                                    .on_hover_text(
-                                        "Press and hold to continously forward the simulation by the step size"
-                                    )
-                                    .clicked()
-                                {
-                                    for _ in 0..self.state.step_by {
-                                        self.simulation.step();
-                                        self.state.step_count += 1;
-                                    }
-                                }
-                                if ui
-                                    .button("⏩")
-                                    .on_hover_text(
-                                        "Press to forward the simulation by the step size",
-                                    )
-                                    .is_pointer_button_down_on()
-                                {
-                                    for _ in 0..self.state.step_by {
-                                        self.simulation.step();
-                                        self.state.step_count += 1;
-                                    }
-                                }
-                            });
-                        }
-                    });
+                self.state.draw_gui(gui_state, renderer);
 
                 let egui_winit::egui::FullOutput {
                     textures_delta,
@@ -481,12 +457,11 @@ where
                     }
                 };
 
-                renderer.render(
-                    screen_descriptor,
-                    paint_jobs,
-                    textures_delta,
-                    self.simulation.get_drawables(),
-                );
+                renderer.render_start();
+
+                self.state.simulation.render(renderer);
+
+                renderer.render_end(screen_descriptor, paint_jobs, textures_delta);
 
                 self.state.frame_count += 1;
 
@@ -497,7 +472,7 @@ where
                         < Duration::from_nanos(NANOS_PER_SECOND / self.state.max_fps as u64)
                     {
                         if i < self.state.max_steps_per_frame {
-                            self.simulation.step();
+                            self.state.simulation.step();
                             self.state.step_count += 1;
                             i += 1;
                         }
@@ -510,27 +485,6 @@ where
         }
     }
 }
-
-/**
-*
-*     let event_loop = EventLoop::<UserEvent>::with_user_event().build().unwrap();
-   let event_proxy = Arc::new(event_loop.create_proxy());
-
-   event_loop.set_control_flow(ControlFlow::Poll);
-
-   #[cfg(not(target_arch = "wasm32"))]
-   {
-       let mut app: App = App::new(event_proxy);
-       event_loop.run_app(&mut app);
-   }
-   #[cfg(target_arch = "wasm32")]
-   {
-       use winit::platform::web::EventLoopExtWebSys;
-
-       let app: App = App::new(event_proxy);
-       event_loop.spawn_app(app);
-   }
-*/
 
 pub fn run<F: Float, const D: usize, P, I, S>(simulation: S)
 where

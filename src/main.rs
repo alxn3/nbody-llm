@@ -1,4 +1,4 @@
-use nlib::shared::{self, Integrator, LeapFrogIntegrator, Particle, Simulation};
+use nlib::{manual, shared::{self, Integrator, LeapFrogIntegrator, Particle, Simulation}};
 
 #[cfg(feature = "render")]
 mod vis;
@@ -62,7 +62,7 @@ fn main() {
     //     points.push(p);
     // }
 
-    let mut sim = shared::BruteForceSimulation::new(points, LeapFrogIntegrator::new());
+    let mut sim = manual::BruteForceSimulation::new(points, LeapFrogIntegrator::new());
     *sim.dt_mut() = 0.0001;
     *sim.g_soft_mut() = 0.02;
 

@@ -1,15 +1,15 @@
 // This file defines shared behavior for the manual and LLM implementations of the N-body simulation.
 
-use bytemuck::Pod;
-use egui::emath::Numeric;
-use nalgebra::{SVector, SimdComplexField, SimdRealField};
-
+use nalgebra::{SVector, SimdRealField};
 use std::{fmt::Debug, ops::AddAssign};
 
 #[cfg(feature = "render")]
-use crate::render::{Context, Drawable, PipelineType};
+use crate::render::Renderer;
+
 #[cfg(feature = "render")]
-use wgpu::util::DeviceExt;
+pub trait RenderTraits: egui::emath::Numeric {}
+#[cfg(not(feature = "render"))]
+pub trait RenderTraits {}
 
 pub trait Float:
     num_traits::Float
@@ -17,15 +17,31 @@ pub trait Float:
     + std::fmt::Display
     + Clone
     + PartialEq
-    + Numeric
     + bytemuck::Zeroable
     + SimdRealField
+    + RenderTraits
     + 'static
 {
 }
 
-impl Float for f64 {}
-impl Float for f32 {}
+macro_rules! impl_float {
+    ($($t:ty),*) => {
+        $(
+            impl Float for $t {}
+        )*
+    };
+}
+
+macro_rules! impl_render {
+    ($($t:ty),*) => {
+        $(
+            impl RenderTraits for $t {}
+        )*
+    };
+}
+
+impl_float!(f32, f64);
+impl_render!(f32, f64);
 
 pub trait Particle<F: Float, const D: usize>: Debug + Clone {
     fn new(position: SVector<F, D>, velocity: SVector<F, D>, mass: F, radius: F) -> Self;
@@ -40,7 +56,7 @@ pub trait Particle<F: Float, const D: usize>: Debug + Clone {
     fn get_mass(&self) -> F;
 }
 
-pub trait Simulation<F: Float, const D: usize, P, I: Integrator<F, D, P>>
+pub trait Simulation<F: Float, const D: usize, P, I: Integrator<F, D, P>>: Clone
 where
     P: Particle<F, D>,
 {
@@ -62,21 +78,19 @@ where
     fn g_soft_mut(&mut self) -> &mut F;
     fn dt_mut(&mut self) -> &mut F;
     #[cfg(feature = "render")]
-    fn get_drawables(&mut self) -> Vec<&mut dyn Drawable>;
+    fn render(&mut self, renderer: &mut Renderer);
     #[cfg(feature = "render")]
-    fn init_drawables(&mut self, context: &mut Context);
-    #[cfg(feature = "render")]
-    fn reset(&mut self);
+    fn render_init(&mut self, renderer: &Renderer);
 }
 
-pub trait Integrator<F: Float, const D: usize, P: Particle<F, D>> {
+pub trait Integrator<F: Float, const D: usize, P: Particle<F, D>>: Clone {
     fn new() -> Self;
     fn init(&mut self) {}
     fn integrate_pre_force(&mut self, points: &mut Vec<P>, dt: F);
     fn integrate_after_force(&mut self, points: &mut Vec<P>, dt: F);
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LeapFrogIntegrator<F: Float, const D: usize, P>
 where
     P: Particle<F, D>,
@@ -125,7 +139,7 @@ where
     }
 }
 
-#[derive(Debug, Clone, Copy, bytemuck::Zeroable)]
+#[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct PointParticle<F: Float, const D: usize> {
     pub position: SVector<F, D>,
@@ -133,8 +147,6 @@ pub struct PointParticle<F: Float, const D: usize> {
     pub acceleration: SVector<F, D>,
     pub mass: F,
 }
-
-unsafe impl<F: Float, const D: usize> Pod for PointParticle<F, D> {}
 
 impl<F: Float, const D: usize> Particle<F, D> for PointParticle<F, D> {
     fn new(position: SVector<F, D>, velocity: SVector<F, D>, mass: F, _radius: F) -> Self {
@@ -184,243 +196,5 @@ impl<F: Float, const D: usize> Particle<F, D> for PointParticle<F, D> {
     #[inline(always)]
     fn get_radius(&self) -> F {
         F::from(0.0).unwrap()
-    }
-}
-
-#[cfg(feature = "render")]
-#[derive(Debug)]
-pub struct BufferData {
-    vertex_buffer: wgpu::Buffer,
-    index_buffer: Option<wgpu::Buffer>,
-    instance_buffer: Option<wgpu::Buffer>,
-    num_indices: u32,
-    needs_update: bool,
-}
-
-#[derive(Debug)]
-pub struct Bodies<F: Float, const D: usize, P>
-where
-    P: Particle<F, D>,
-{
-    pub points: Vec<P>,
-    #[cfg(feature = "render")]
-    pub buffer_data: Option<BufferData>,
-    pub _phantom: std::marker::PhantomData<F>,
-}
-
-impl<F: Float, const D: usize, P> Bodies<F, D, P>
-where
-    P: Particle<F, D>,
-{
-    pub fn new(points: Vec<P>) -> Self {
-        Self {
-            points,
-            #[cfg(feature = "render")]
-            buffer_data: None,
-            _phantom: std::marker::PhantomData,
-        }
-    }
-}
-
-pub struct BruteForceSimulation<F: Float, const D: usize, P, I = LeapFrogIntegrator<F, D, P>>
-where
-    P: Particle<F, D>,
-    I: Integrator<F, D, P>,
-{
-    bodies: Bodies<F, D, P>,
-    integrator: I,
-    g: F,
-    dt: F,
-    g_soft: F,
-    elapsed: F,
-    #[cfg(feature = "render")]
-    starting_points: Vec<P>,
-}
-
-#[cfg(feature = "render")]
-impl<F: Float, const D: usize, P> Drawable for Bodies<F, D, P>
-where
-    P: Particle<F, D>,
-{
-    fn init(&mut self, context: &mut Context) {
-        let position_buffer: Vec<f32> = self
-            .points
-            .iter()
-            .map(|p| {
-                p.position()
-                    .iter()
-                    .map(|x| num_traits::cast::<F, f32>(*x).unwrap())
-                    .collect::<Vec<f32>>()
-            })
-            .flatten()
-            .collect();
-
-        let vertex_buffer = context
-            .device
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Vertex Buffer"),
-                contents: bytemuck::cast_slice(&position_buffer),
-                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            });
-
-        self.buffer_data = Some(BufferData {
-            vertex_buffer,
-            index_buffer: None,
-            instance_buffer: None,
-            num_indices: self.points.len() as u32,
-            needs_update: false,
-        });
-    }
-
-    fn get_pipeline_type(&self) -> crate::render::PipelineType {
-        PipelineType::Points
-    }
-
-    fn get_vertex_buffer(&self) -> &wgpu::Buffer {
-        &self.buffer_data.as_ref().unwrap().vertex_buffer
-    }
-
-    fn get_num_indices(&self) -> u32 {
-        self.buffer_data.as_ref().unwrap().num_indices
-    }
-
-    fn update_buffers(&mut self, queue: &mut wgpu::Queue) {
-        let buffer_data = self.buffer_data.as_ref().unwrap();
-
-        let position_buffer: Vec<f32> = self
-            .points
-            .iter()
-            .map(|p| {
-                p.position()
-                    .iter()
-                    .map(|x| num_traits::cast::<F, f32>(*x).unwrap())
-                    .collect::<Vec<f32>>()
-            })
-            .flatten()
-            .collect();
-
-        queue.write_buffer(
-            &buffer_data.vertex_buffer,
-            0,
-            bytemuck::cast_slice(&position_buffer),
-        );
-    }
-
-    fn buffer_needs_update(&self) -> bool {
-        self.buffer_data.as_ref().unwrap().needs_update
-    }
-}
-
-impl<F: Float, const D: usize, P, I> Simulation<F, D, P, I> for BruteForceSimulation<F, D, P, I>
-where
-    P: Particle<F, D>,
-    I: Integrator<F, D, P>,
-{
-    fn new(points: Vec<P>, integrator: I) -> Self {
-        Self {
-            #[cfg(feature = "render")]
-            starting_points: points.clone(),
-
-            bodies: Bodies::new(points),
-            integrator,
-            g: F::from(1.0).unwrap(),
-            dt: F::from(0.001).unwrap(),
-            g_soft: F::from(0.0).unwrap(),
-            elapsed: F::from(0.0).unwrap(),
-        }
-    }
-
-    fn init(&mut self) {
-        self.integrator.init();
-        self.elapsed = F::from(0.0).unwrap();
-    }
-
-    fn g(&self) -> F {
-        self.g
-    }
-
-    fn g_soft(&self) -> F {
-        self.g_soft
-    }
-
-    fn dt(&self) -> F {
-        self.dt
-    }
-
-    fn g_mut(&mut self) -> &mut F {
-        &mut self.g
-    }
-
-    fn g_soft_mut(&mut self) -> &mut F {
-        &mut self.g_soft
-    }
-
-    fn dt_mut(&mut self) -> &mut F {
-        &mut self.dt
-    }
-
-    fn elapsed(&self) -> F {
-        self.elapsed
-    }
-
-    fn update_forces(&mut self) {
-        for point in self.bodies.points.iter_mut() {
-            point.acceleration_mut().fill(F::from(0.0).unwrap());
-        }
-
-        let g_soft2 = self.g_soft() * self.g_soft();
-        for i in 0..self.bodies.points.len() {
-            for j in 0..i {
-                let r = self.bodies.points[i].position() - self.bodies.points[j].position();
-                let r_dist = SimdComplexField::simd_sqrt(r.norm_squared() + g_soft2);
-                let r_cubed = r_dist * r_dist * r_dist;
-                let m_i = self.bodies.points[i].get_mass();
-                let m_j = self.bodies.points[j].get_mass();
-                let force = self.g() / r_cubed;
-                *self.bodies.points[i].acceleration_mut() -= r * force * m_j;
-                *self.bodies.points[j].acceleration_mut() += r * force * m_i;
-            }
-        }
-    }
-
-    fn step_by(&mut self, dt: F) {
-        self.integrator
-            .integrate_pre_force(&mut self.bodies.points, dt);
-        self.update_forces();
-        self.integrator
-            .integrate_after_force(&mut self.bodies.points, dt);
-        self.elapsed += dt;
-
-        #[cfg(feature = "render")]
-        {
-            self.bodies.buffer_data.as_mut().unwrap().needs_update = true;
-        }
-    }
-
-    fn add_point(&mut self, point: P) {
-        self.bodies.points.push(point);
-    }
-
-    fn remove_point(&mut self, index: usize) {
-        self.bodies.points.remove(index);
-    }
-
-    fn get_points(&self) -> &Vec<P> {
-        &self.bodies.points
-    }
-
-    #[cfg(feature = "render")]
-    fn get_drawables(&mut self) -> Vec<&mut dyn Drawable> {
-        vec![&mut self.bodies]
-    }
-
-    #[cfg(feature = "render")]
-    fn init_drawables(&mut self, context: &mut Context) {
-        self.bodies.init(context);
-    }
-
-    #[cfg(feature = "render")]
-    fn reset(&mut self) {
-        self.bodies.points = self.starting_points.clone();
     }
 }

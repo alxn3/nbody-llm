@@ -4,8 +4,8 @@ use wgpu::{ShaderModule, util::DeviceExt};
 use winit::{event::WindowEvent, window::Window};
 
 use super::{
-    Camera, CameraController, Drawable, OrbitCameraController, add_required_shaders,
-    create_render_pipeline, pipeline::PipelineType,
+    Camera, CameraController, OrbitCameraController, add_required_shaders, create_render_pipeline,
+    pipeline::PipelineType,
 };
 
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
@@ -26,6 +26,9 @@ pub struct Renderer<CameraController = OrbitCameraController> {
     world_bind_group: wgpu::BindGroup,
     world_bind_group_layout: wgpu::BindGroupLayout,
     egui_renderer: egui_wgpu::Renderer,
+    curr_render_pass: Option<wgpu::RenderPass<'static>>,
+    curr_render_encoder: Option<wgpu::CommandEncoder>,
+    curr_surface_texture: Option<wgpu::SurfaceTexture>,
 }
 
 impl<C: CameraController> Debug for Renderer<C> {
@@ -147,6 +150,9 @@ impl<C: CameraController> Renderer<C> {
             world_bind_group,
             world_bind_group_layout,
             egui_renderer,
+            curr_render_pass: None,
+            curr_render_encoder: None,
+            curr_surface_texture: None,
         }
     }
 
@@ -180,16 +186,74 @@ impl<C: CameraController> Renderer<C> {
         }
     }
 
-    pub fn render(
+    pub fn render_start(&mut self) {
+        let Ok(surface_texture) = self.context.surface.get_current_texture() else {
+            return;
+        };
+
+        let surface_texture_view = surface_texture
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+
+        let mut encoder =
+            self.context
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("Render Encoder"),
+                });
+
+        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Render Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &surface_texture_view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: &self.depth_texture,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(1.0),
+                    store: wgpu::StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
+
+        render_pass.set_bind_group(0, &self.world_bind_group, &[]);
+
+        self.curr_render_pass = Some(render_pass.forget_lifetime());
+        self.curr_render_encoder = Some(encoder);
+        self.curr_surface_texture = Some(surface_texture);
+    }
+
+    pub fn set_uniforms(&mut self) {
+        let render_pass = self.curr_render_pass.as_mut().unwrap();
+        render_pass.set_bind_group(0, &self.world_bind_group, &[]);
+    }
+
+    pub fn render_end(
         &mut self,
         screen_descriptor: egui_wgpu::ScreenDescriptor,
         paint_jobs: Vec<egui::epaint::ClippedPrimitive>,
         textures_delta: egui::TexturesDelta,
-        objects: Vec<&mut dyn Drawable>,
     ) {
-        let Ok(surface_texture) = self.context.surface.get_current_texture() else {
-            return;
-        };
+        let surface_texture = self.curr_surface_texture.take().unwrap();
+
+        let render_pass = self.curr_render_pass.take().unwrap();
+        let mut encoder = self.curr_render_encoder.take().unwrap();
+
+        self.egui_renderer.update_buffers(
+            &self.context.device,
+            &self.context.queue,
+            &mut encoder,
+            &paint_jobs,
+            &screen_descriptor,
+        );
 
         for (id, image_delta) in &textures_delta.set {
             self.egui_renderer.update_texture(
@@ -204,78 +268,21 @@ impl<C: CameraController> Renderer<C> {
             self.egui_renderer.free_texture(id);
         }
 
-        let surface_texture_view = surface_texture
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-
-        let mut encoder =
-            self.context
-                .device
-                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("Render Encoder"),
-                });
-
-        self.egui_renderer.update_buffers(
-            &self.context.device,
-            &self.context.queue,
-            &mut encoder,
+        self.egui_renderer.render(
+            &mut render_pass.forget_lifetime(),
             &paint_jobs,
             &screen_descriptor,
         );
 
-        {
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Render Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &surface_texture_view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.depth_texture,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
-                        store: wgpu::StoreOp::Store,
-                    }),
-                    stencil_ops: None,
-                }),
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
-
-            let mut render_groups: HashMap<PipelineType, Vec<&mut dyn Drawable>> = HashMap::new();
-
-            for obj in objects {
-                render_groups
-                    .entry(obj.get_pipeline_type())
-                    .or_insert_with(Vec::new)
-                    .push(obj);
-            }
-
-            for (pipeline_type, objects) in render_groups {
-                let pipeline = self.get_pipeline(pipeline_type);
-
-                render_pass.set_pipeline(pipeline);
-                render_pass.set_bind_group(0, &self.world_bind_group, &[]);
-
-                for obj in objects {
-                    obj.draw(&mut render_pass, &mut self.context.queue);
-                }
-            }
-            self.egui_renderer.render(
-                &mut render_pass.forget_lifetime(),
-                &paint_jobs,
-                &screen_descriptor,
-            );
-        }
         self.context.queue.submit(std::iter::once(encoder.finish()));
         surface_texture.present();
     }
 
-    fn get_pipeline(&mut self, pipeline_type: PipelineType) -> &wgpu::RenderPipeline {
+    pub fn get_render_pass(&mut self) -> &mut wgpu::RenderPass<'static> {
+        self.curr_render_pass.as_mut().unwrap()
+    }
+
+    pub fn get_pipeline(&mut self, pipeline_type: PipelineType) -> &wgpu::RenderPipeline {
         if self.pipelines.contains_key(&pipeline_type) {
             return self.pipelines.get(&pipeline_type).unwrap();
         }
@@ -297,6 +304,15 @@ impl<C: CameraController> Renderer<C> {
         self.pipelines.insert(pipeline_type, pipeline);
         self.pipelines.get(&pipeline_type).unwrap()
     }
+
+    pub fn set_pipeline(&mut self, pipeline_type: PipelineType) {
+        let mut render_pass = self.curr_render_pass.take().unwrap();
+
+        let pipeline = self.get_pipeline(pipeline_type);
+        render_pass.set_pipeline(pipeline);
+
+        self.curr_render_pass = Some(render_pass);
+    }
 }
 
 #[derive(Debug)]
@@ -304,7 +320,7 @@ pub struct Context {
     _instance: wgpu::Instance,
     _adapter: wgpu::Adapter,
     pub device: wgpu::Device,
-    queue: wgpu::Queue,
+    pub queue: wgpu::Queue,
     surface: wgpu::Surface<'static>,
     pub surface_config: wgpu::SurfaceConfiguration,
     shaders: HashMap<&'static str, ShaderModule>,
