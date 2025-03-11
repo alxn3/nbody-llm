@@ -51,9 +51,11 @@ pub trait Particle<F: Float, const D: usize>: Debug + Clone {
     fn position_mut(&mut self) -> &mut SVector<F, D>;
     fn velocity_mut(&mut self) -> &mut SVector<F, D>;
     fn acceleration_mut(&mut self) -> &mut SVector<F, D>;
-    #[allow(unused)]
-    fn get_radius(&self) -> F;
     fn get_mass(&self) -> F;
+}
+
+pub trait ParticleSized<F: Float, const D: usize>: Particle<F, D> {
+    fn get_radius(&mut self, radius: F);
 }
 
 pub trait Simulation<F: Float, const D: usize, P, I: Integrator<F, D, P>>: Clone
@@ -191,10 +193,5 @@ impl<F: Float, const D: usize> Particle<F, D> for PointParticle<F, D> {
     #[inline(always)]
     fn get_mass(&self) -> F {
         self.mass
-    }
-
-    #[inline(always)]
-    fn get_radius(&self) -> F {
-        F::from(0.0).unwrap()
     }
 }
