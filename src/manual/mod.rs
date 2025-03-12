@@ -1,4 +1,4 @@
-mod bruteforce;
+mod brute_force;
 
-pub use bruteforce::*;
+pub use brute_force::*;
 
