@@ -11,7 +11,7 @@ public struct WorldUniform
 };
 struct VertexInput
 {
-    float3 position : POSITION;
+    float3 position;
 };
 
 struct VertexOutput
@@ -52,7 +52,7 @@ float4 fragment_main(VertexOutput input)
     {
         discard;
     }
-    float3 c = float3(3.0, 1.5, 1.0);
+    float3 c = float3(1.5, 0.75, 0.5);
 
     // for normal shading
     // float3 norm = float3(input.diff.x, input.diff.y, sqrt(1.0 - dot(input.diff, input.diff)));
@@ -63,7 +63,6 @@ float4 fragment_main(VertexOutput input)
     // c.xyz *= light;
 
     c.xyz *= input.position.z;
-    c.xyz *= 0.5;
     c.xyz += 0.5;
 
     return float4(c, 1.0);
