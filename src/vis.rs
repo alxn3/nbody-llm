@@ -7,8 +7,9 @@ use nlib::{
 };
 use winit::{
     application::ApplicationHandler,
-    event::WindowEvent,
+    event::{ElementState, KeyEvent, WindowEvent},
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy},
+    keyboard::{KeyCode, ModifiersState, PhysicalKey},
     window::{Theme, Window, WindowId},
 };
 
@@ -271,6 +272,7 @@ where
     event_proxy: Arc<EventLoopProxy<UserEvent>>,
     gui_state: Option<egui_winit::State>,
     state: SimulationState<F, D, P, I, S>,
+    modifiers: ModifiersState,
     _phantom: std::marker::PhantomData<(F, P, I)>,
 }
 
@@ -305,6 +307,7 @@ where
             event_proxy,
             gui_state: None,
             state,
+            modifiers: ModifiersState::empty(),
             _phantom: std::marker::PhantomData,
         }
     }
@@ -420,6 +423,54 @@ where
         renderer.process_input(&event);
 
         match event {
+            WindowEvent::KeyboardInput { event, .. } => match event {
+                KeyEvent {
+                    state: ElementState::Pressed,
+                    physical_key: PhysicalKey::Code(KeyCode::Space),
+                    ..
+                } => {
+                    self.state.paused = !self.state.paused;
+                }
+                KeyEvent {
+                    state: ElementState::Pressed,
+                    physical_key: PhysicalKey::Code(KeyCode::KeyR),
+                    ..
+                } => {
+                    if self.modifiers.shift_key() {
+                        self.state.simulation = self.state.simulation_base.clone();
+                        self.state.init(renderer);
+                    } else {
+                        renderer.reset_camera();
+                    }
+                }
+                KeyEvent {
+                    state: ElementState::Pressed,
+                    physical_key: PhysicalKey::Code(KeyCode::ArrowLeft),
+                    ..
+                } => {
+                    self.state.paused = true;
+                    let dt = -self.state.simulation.dt();
+                    for _ in 0..self.state.step_by {
+                        self.state.simulation.step_by(dt);
+                        self.state.step_count -= 1;
+                    }
+                }
+                KeyEvent {
+                    state: ElementState::Pressed,
+                    physical_key: PhysicalKey::Code(KeyCode::ArrowRight),
+                    ..
+                } => {
+                    self.state.paused = true;
+                    for _ in 0..self.state.step_by {
+                        self.state.simulation.step();
+                        self.state.step_count += 1;
+                    }
+                }
+                _ => {}
+            },
+            WindowEvent::ModifiersChanged(modifiers) => {
+                self.modifiers = modifiers.state();
+            }
             WindowEvent::Resized(size) => {
                 log::info!("Resized to {:?}", size);
                 renderer.resize(size);

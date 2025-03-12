@@ -3,6 +3,8 @@ use std::{collections::HashMap, fmt::Debug, sync::Arc};
 use wgpu::{ShaderModule, util::DeviceExt};
 use winit::{event::WindowEvent, window::Window};
 
+use crate::render::CameraState;
+
 use super::{
     Camera, CameraController, OrbitCameraController, add_required_shaders, create_render_pipeline,
     pipeline::PipelineType,
@@ -60,13 +62,15 @@ impl<C: CameraController> Renderer<C> {
 
         let camera = Camera::new(
             &context.device,
-            (0.0, 1.0, 2.0).into(),
-            (0.0, 0.0, 0.0).into(),
-            (0.0, 1.0, 0.0).into(),
-            width as f32 / height as f32,
-            45.0,
-            0.1,
-            100.0,
+            CameraState::new(
+                (0.0, 1.0, 2.0).into(),
+                (0.0, 0.0, 0.0).into(),
+                (0.0, 1.0, 0.0).into(),
+                width as f32 / height as f32,
+                45.0,
+                0.1,
+                100.0,
+            ),
         );
 
         let camera_controller = C::new();
@@ -312,6 +316,17 @@ impl<C: CameraController> Renderer<C> {
         render_pass.set_pipeline(pipeline);
 
         self.curr_render_pass = Some(render_pass);
+    }
+
+    pub fn reset_camera(&mut self) {
+        self.camera.reset();
+        self.camera_controller.reset();
+        self.camera_controller.update_camera(&mut self.camera);
+        self.context.queue.write_buffer(
+            &self.camera.buffer,
+            0,
+            bytemuck::cast_slice(&[self.camera.uniform]),
+        );
     }
 }
 

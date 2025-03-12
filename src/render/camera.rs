@@ -9,8 +9,8 @@ pub struct CameraUniform {
     view_proj: [[f32; 4]; 4],
 }
 
-#[derive(Debug)]
-struct CameraState {
+#[derive(Debug, Clone)]
+pub struct CameraState {
     pub eye: glam::Vec3,
     pub target: glam::Vec3,
     pub up: glam::Vec3,
@@ -57,24 +57,14 @@ impl CameraState {
 #[derive(Debug)]
 pub struct Camera {
     state: CameraState,
+    init_state: CameraState,
     pub uniform: CameraUniform,
     pub buffer: wgpu::Buffer,
 }
 
 impl Camera {
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        device: &wgpu::Device,
-        eye: glam::Vec3,
-        target: glam::Vec3,
-        up: glam::Vec3,
-        aspect: f32,
-        fovy: f32,
-        znear: f32,
-        zfar: f32,
-    ) -> Self {
-        let state = CameraState::new(eye, target, up, aspect, fovy, znear, zfar);
-
+    pub fn new(device: &wgpu::Device, state: CameraState) -> Self {
         let uniform = CameraUniform {
             view: state.get_view_matrix().to_cols_array_2d(),
             proj: state.get_projection_matrix().to_cols_array_2d(),
@@ -88,13 +78,14 @@ impl Camera {
         });
 
         Self {
+            init_state: state.clone(),
             state,
             uniform,
             buffer,
         }
     }
 
-    pub fn update_uniform(&mut self) {
+    fn update_uniform(&mut self) {
         self.uniform.view = self.state.get_view_matrix().to_cols_array_2d();
         self.uniform.proj = self.state.get_projection_matrix().to_cols_array_2d();
         self.uniform.view_proj = self.state.get_view_projection_matrix().to_cols_array_2d();
@@ -103,12 +94,18 @@ impl Camera {
     pub fn set_aspect(&mut self, aspect: f32) {
         self.state.aspect = aspect;
     }
+
+    pub fn reset(&mut self) {
+        self.init_state.aspect = self.state.aspect;
+        self.state = self.init_state.clone();
+    }
 }
 
 pub trait CameraController: std::fmt::Debug {
     fn new() -> Self;
     fn process_input(&mut self, event: &WindowEvent) -> bool;
     fn update_camera(&mut self, camera: &mut Camera);
+    fn reset(&mut self);
 }
 
 #[derive(Debug)]
@@ -179,5 +176,11 @@ impl CameraController for OrbitCameraController {
         ) * 5.0;
         camera.state.eye = eye * self.zoom;
         camera.update_uniform();
+    }
+
+    fn reset(&mut self) {
+        self.yaw = 0.0;
+        self.pitch = 0.0;
+        self.zoom = 1.0;
     }
 }
