@@ -1,7 +1,6 @@
 // This file defines shared behavior for the manual and LLM implementations of the N-body simulation.
 
 use nalgebra::{SVector, SimdRealField};
-use std::{fmt::Debug, ops::AddAssign};
 
 #[cfg(feature = "render")]
 use crate::render::Renderer;
@@ -43,7 +42,7 @@ macro_rules! impl_render {
 impl_float!(f32, f64);
 impl_render!(f32, f64);
 
-pub trait Particle<F: Float, const D: usize>: Debug + Clone {
+pub trait Particle<F: Float, const D: usize>: Clone {
     fn new(position: SVector<F, D>, velocity: SVector<F, D>, mass: F, radius: F) -> Self;
     fn position(&self) -> &SVector<F, D>;
     fn velocity(&self) -> &SVector<F, D>;
@@ -62,7 +61,7 @@ pub trait Simulation<F: Float, const D: usize, P, I: Integrator<F, D, P>>: Clone
 where
     P: Particle<F, D>,
 {
-    fn new(points: Vec<P>, integrator: I) -> Self;
+    fn new(points: Vec<P>, integrator: I, bounds: Bounds<F, D>) -> Self;
     fn init(&mut self);
     fn step(&mut self) {
         self.step_by(self.dt());
@@ -124,19 +123,17 @@ where
     fn integrate_pre_force(&mut self, points: &mut Vec<P>, dt: F) {
         for point in points.iter_mut() {
             let velocity = *point.velocity();
-            point
-                .position_mut()
-                .add_assign(velocity * F::from(0.5).unwrap() * dt);
+            *point
+                .position_mut() += velocity * F::from(0.5).unwrap() * dt;
         }
     }
     fn integrate_after_force(&mut self, points: &mut Vec<P>, dt: F) {
         for point in points.iter_mut() {
             let acceleration = *point.acceleration();
-            point.velocity_mut().add_assign(acceleration * dt);
+            *point.velocity_mut() += acceleration * dt;
             let velocity = *point.velocity();
-            point
-                .position_mut()
-                .add_assign(velocity * F::from(0.5).unwrap() * dt);
+            *point
+                .position_mut() +=velocity * F::from(0.5).unwrap() * dt;
         }
     }
 }
@@ -193,5 +190,43 @@ impl<F: Float, const D: usize> Particle<F, D> for PointParticle<F, D> {
     #[inline(always)]
     fn get_mass(&self) -> F {
         self.mass
+    }
+}
+
+pub trait AABB<F: Float, const D: usize, P: Particle<F, D>> {
+    fn min(&self) -> &SVector<F, D>;
+    fn max(&self) -> &SVector<F, D>;
+    fn center(&self) -> SVector<F, D>;
+    fn contains(&self, point: &P) -> bool {
+        let position = point.position();
+        position >= self.min() && position <= self.max()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Bounds<F: Float, const D: usize> {
+    pub min: SVector<F, D>,
+    pub max: SVector<F, D>,
+}
+
+impl<F: Float, const D: usize> AABB<F, D, PointParticle<F, D>> for Bounds<F, D> {
+    fn min(&self) -> &SVector<F, D> {
+        &self.min
+    }
+
+    fn max(&self) -> &SVector<F, D> {
+        &self.max
+    }
+
+    fn center(&self) -> SVector<F, D> {
+        (self.min + self.max) / F::from(2.0).unwrap()
+    }
+}
+
+impl<F: Float, const D: usize> Bounds<F, D> {
+    pub fn new(center: SVector<F, D>, half_size: F) -> Self {
+        let min = center.add_scalar(-half_size);
+        let max = center.add_scalar(half_size);
+        Self { min, max }
     }
 }

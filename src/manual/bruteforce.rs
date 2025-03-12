@@ -6,7 +6,7 @@ use {
     wgpu::util::DeviceExt,
 };
 
-use crate::shared::{Float, Integrator, LeapFrogIntegrator, Particle, Simulation};
+use crate::shared::{Bounds, Float, Integrator, LeapFrogIntegrator, Particle, Simulation};
 
 #[derive(Debug, Clone)]
 pub struct BruteForceSimulation<F: Float, const D: usize, P, I = LeapFrogIntegrator<F, D, P>>
@@ -14,14 +14,17 @@ where
     P: Particle<F, D>,
     I: Integrator<F, D, P>,
 {
-    bodies: Vec<P>,
+    points: Vec<P>,
+    bounds: Bounds<F, D>,
     integrator: I,
     g: F,
     dt: F,
     g_soft: F,
     elapsed: F,
     #[cfg(feature = "render")]
-    bodies_vertex_buffer: Option<wgpu::Buffer>,
+    points_vertex_buffer: Option<wgpu::Buffer>,
+    #[cfg(feature = "render")]
+    bounds_vertex_buffer: Option<wgpu::Buffer>,
 }
 
 impl<F: Float, const D: usize, P, I> Simulation<F, D, P, I> for BruteForceSimulation<F, D, P, I>
@@ -29,16 +32,19 @@ where
     P: Particle<F, D>,
     I: Integrator<F, D, P>,
 {
-    fn new(points: Vec<P>, integrator: I) -> Self {
+    fn new(points: Vec<P>, integrator: I, bounds: Bounds<F, D>) -> Self {
         Self {
-            bodies: points,
+            points,
+            bounds,
             integrator,
             g: F::from(1.0).unwrap(),
             dt: F::from(0.001).unwrap(),
             g_soft: F::from(0.0).unwrap(),
             elapsed: F::from(0.0).unwrap(),
             #[cfg(feature = "render")]
-            bodies_vertex_buffer: None,
+            points_vertex_buffer: None,
+            #[cfg(feature = "render")]
+            bounds_vertex_buffer: None,
         }
     }
 
@@ -76,42 +82,42 @@ where
     }
 
     fn update_forces(&mut self) {
-        for point in self.bodies.iter_mut() {
+        for point in self.points.iter_mut() {
             point.acceleration_mut().fill(F::from(0.0).unwrap());
         }
 
         let g_soft2 = self.g_soft() * self.g_soft();
-        for i in 0..self.bodies.len() {
+        for i in 0..self.points.len() {
             for j in 0..i {
-                let r = self.bodies[i].position() - self.bodies[j].position();
+                let r = self.points[i].position() - self.points[j].position();
                 let r_dist = SimdComplexField::simd_sqrt(r.norm_squared() + g_soft2);
                 let r_cubed = r_dist * r_dist * r_dist;
-                let m_i = self.bodies[i].get_mass();
-                let m_j = self.bodies[j].get_mass();
+                let m_i = self.points[i].get_mass();
+                let m_j = self.points[j].get_mass();
                 let force = self.g() / r_cubed;
-                *self.bodies[i].acceleration_mut() -= r * force * m_j;
-                *self.bodies[j].acceleration_mut() += r * force * m_i;
+                *self.points[i].acceleration_mut() -= r * force * m_j;
+                *self.points[j].acceleration_mut() += r * force * m_i;
             }
         }
     }
 
     fn step_by(&mut self, dt: F) {
-        self.integrator.integrate_pre_force(&mut self.bodies, dt);
+        self.integrator.integrate_pre_force(&mut self.points, dt);
         self.update_forces();
-        self.integrator.integrate_after_force(&mut self.bodies, dt);
+        self.integrator.integrate_after_force(&mut self.points, dt);
         self.elapsed += dt;
     }
 
     fn add_point(&mut self, point: P) {
-        self.bodies.push(point);
+        self.points.push(point);
     }
 
     fn remove_point(&mut self, index: usize) {
-        self.bodies.remove(index);
+        self.points.remove(index);
     }
 
     fn get_points(&self) -> &Vec<P> {
-        &self.bodies
+        &self.points
     }
 
     #[cfg(feature = "render")]
@@ -119,7 +125,7 @@ where
         let queue = &renderer.context.queue;
 
         let position_data: Vec<f32> = self
-            .bodies
+            .points
             .iter()
             .flat_map(|p| {
                 p.position()
@@ -128,7 +134,7 @@ where
                     .collect::<Vec<f32>>()
             })
             .collect();
-        let bodies_vertex_buffer = self.bodies_vertex_buffer.as_ref().unwrap();
+        let bodies_vertex_buffer = self.points_vertex_buffer.as_ref().unwrap();
 
         queue.write_buffer(
             bodies_vertex_buffer,
@@ -136,22 +142,30 @@ where
             bytemuck::cast_slice(&position_data),
         );
 
-        renderer.set_pipeline(PipelineType::Points);
+        {
+            renderer.set_pipeline(PipelineType::Points);
+            let render_pass = renderer.get_render_pass();
+            render_pass.set_vertex_buffer(0, bodies_vertex_buffer.slice(..));
+            render_pass.draw(0..4, 0..self.points.len() as u32);
+        }
 
-        let render_pass = renderer.get_render_pass();
-
-        render_pass.set_vertex_buffer(0, bodies_vertex_buffer.slice(..));
-
-        render_pass.draw(0..4, 0..self.bodies.len() as u32);
+        {
+            renderer.set_pipeline(PipelineType::AABB);
+            let render_pass: &mut wgpu::RenderPass<'_> = renderer.get_render_pass();
+            render_pass.set_vertex_buffer(0, self.bounds_vertex_buffer.as_ref().unwrap().slice(..));
+            render_pass.draw(0..16, 0..1);
+        }
     }
 
     #[cfg(feature = "render")]
     fn render_init(&mut self, renderer: &Renderer) {
+        use crate::shared::AABB;
+
         let device = &renderer.context.device;
         let queue = &renderer.context.queue;
 
-        let position_data: Vec<f32> = self
-            .bodies
+        let point_position_data: Vec<f32> = self
+            .points
             .iter()
             .flat_map(|p| {
                 p.position()
@@ -161,13 +175,35 @@ where
             })
             .collect();
 
-        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        let points_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertex Buffer"),
-            contents: bytemuck::cast_slice(&position_data),
+            contents: bytemuck::cast_slice(&point_position_data),
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         });
-        queue.write_buffer(&vertex_buffer, 0, bytemuck::cast_slice(&position_data));
+        queue.write_buffer(
+            &points_vertex_buffer,
+            0,
+            bytemuck::cast_slice(&point_position_data),
+        );
 
-        self.bodies_vertex_buffer = Some(vertex_buffer);
+        let mut bounds_data = [self.bounds.min(), self.bounds.max()]
+            .iter()
+            .flat_map(|p| {
+                p.iter()
+                    .map(|x| num_traits::cast::<F, f32>(*x).unwrap())
+                    .collect::<Vec<f32>>()
+            })
+            .collect::<Vec<f32>>();
+        let color = [0.0, 1.0, 0.0, 1.0];
+        bounds_data.extend(color);
+
+        let bounds_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Bounds Vertex Buffer"),
+            contents: bytemuck::cast_slice(&bounds_data),
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        });
+
+        self.points_vertex_buffer = Some(points_vertex_buffer);
+        self.bounds_vertex_buffer = Some(bounds_vertex_buffer);
     }
 }

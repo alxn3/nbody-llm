@@ -5,7 +5,8 @@ use super::{Context, Shader};
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum PipelineType {
     Points,
-    PointsSized,
+    // PointsSized,
+    AABB,
 }
 
 pub fn add_required_shaders(pipeline_type: PipelineType, context: &mut Context) {
@@ -16,10 +17,10 @@ pub fn add_required_shaders(pipeline_type: PipelineType, context: &mut Context) 
                 desc: include_wgsl!("../out/points.wgsl"),
             });
         }
-        _ => {
+        PipelineType::AABB => {
             context.add_shader(Shader {
-                name: "points",
-                desc: include_wgsl!("../out/points.wgsl"),
+                name: "aabb",
+                desc: include_wgsl!("../out/aabb.wgsl"),
             });
         }
     }
@@ -32,7 +33,7 @@ pub fn create_render_pipeline(
 ) -> wgpu::RenderPipeline {
     match pipeline_type {
         PipelineType::Points => create_points_pipeline(context, render_pipeline_layout),
-        _ => create_points_pipeline(context, render_pipeline_layout),
+        PipelineType::AABB => create_aabb_pipeline(context, render_pipeline_layout),
     }
 }
 
@@ -50,7 +51,7 @@ fn create_points_pipeline(
     context
         .device
         .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Render Pipeline"),
+            label: Some("Points Render Pipeline"),
             layout: Some(render_pipeline_layout),
             vertex: wgpu::VertexState {
                 module: shader,
@@ -64,6 +65,62 @@ fn create_points_pipeline(
             },
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleStrip,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: Some(wgpu::Face::Back),
+                polygon_mode: wgpu::PolygonMode::Fill,
+                unclipped_depth: false,
+                conservative: false,
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: super::DEPTH_FORMAT,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::Less,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState {
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: shader,
+                entry_point: Some("fragment_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: context.surface_config.format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            }),
+            multiview: None,
+            cache: None,
+        })
+}
+
+fn create_aabb_pipeline(
+    context: &Context,
+    render_pipeline_layout: &wgpu::PipelineLayout,
+) -> wgpu::RenderPipeline {
+    let shader = context.get_shader("aabb").expect("Shader not found");
+    context
+        .device
+        .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("AABB Render Pipeline"),
+            layout: Some(render_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: shader,
+                entry_point: Some("vertex_main"),
+                buffers: &[wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<[f32; 10]>() as wgpu::BufferAddress,
+                    step_mode: wgpu::VertexStepMode::Instance,
+                    attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x4],
+                }],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            },
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::LineStrip,
                 strip_index_format: None,
                 front_face: wgpu::FrontFace::Ccw,
                 cull_mode: Some(wgpu::Face::Back),

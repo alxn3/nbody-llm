@@ -4,6 +4,8 @@ use winit::event::WindowEvent;
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct CameraUniform {
+    view: [[f32; 4]; 4],
+    proj: [[f32; 4]; 4],
     view_proj: [[f32; 4]; 4],
 }
 
@@ -74,6 +76,8 @@ impl Camera {
         let state = CameraState::new(eye, target, up, aspect, fovy, znear, zfar);
 
         let uniform = CameraUniform {
+            view: state.get_view_matrix().to_cols_array_2d(),
+            proj: state.get_projection_matrix().to_cols_array_2d(),
             view_proj: state.get_view_projection_matrix().to_cols_array_2d(),
         };
 
@@ -91,6 +95,8 @@ impl Camera {
     }
 
     pub fn update_uniform(&mut self) {
+        self.uniform.view = self.state.get_view_matrix().to_cols_array_2d();
+        self.uniform.proj = self.state.get_projection_matrix().to_cols_array_2d();
         self.uniform.view_proj = self.state.get_view_projection_matrix().to_cols_array_2d();
     }
 
@@ -143,7 +149,7 @@ impl CameraController for OrbitCameraController {
                         position.y - last_cursor_pos.y,
                     );
                     self.yaw -= delta.0 as f32 * 0.005;
-                    self.pitch -= delta.1 as f32 * 0.005;
+                    self.pitch += delta.1 as f32 * 0.005;
                     self.pitch = self.pitch.clamp(-1.5, 1.5);
                 }
                 self.last_cursor_pos = Some(*position);
@@ -172,6 +178,6 @@ impl CameraController for OrbitCameraController {
             self.yaw.cos() * self.pitch.cos(),
         ) * 5.0;
         camera.state.eye = eye * self.zoom;
-        camera.uniform.view_proj = camera.state.get_view_projection_matrix().to_cols_array_2d();
+        camera.update_uniform();
     }
 }
