@@ -26,26 +26,26 @@ fn init_logger() {
 fn main() {
     init_logger();
 
-    let mut points: Vec<shared::PointParticle<f64, 3>> = vec![
-        shared::PointParticle::new(
-            [-1.0, 0.0, 0.0].into(),
-            [0.1983865989, 0.1226004003, 0.0].into(),
-            1.0,
-            0.0,
-        ),
-        shared::PointParticle::new(
-            [1.0, 0.0, 0.0].into(),
-            [0.1983865989, 0.1226004003, 0.0].into(),
-            1.0,
-            0.0,
-        ),
-        shared::PointParticle::new(
-            [0.0, 0.0, 0.0].into(),
-            [-0.7935463956, -0.4904016012, 0.0].into(),
-            0.5,
-            0.0,
-        ),
-    ];
+    // let mut points: Vec<shared::PointParticle<f64, 3>> = vec![
+    //     shared::PointParticle::new(
+    //         [-1.0, 0.0, 0.0].into(),
+    //         [0.1983865989, 0.1226004003, 0.0].into(),
+    //         1.0,
+    //         0.0,
+    //     ),
+    //     shared::PointParticle::new(
+    //         [1.0, 0.0, 0.0].into(),
+    //         [0.1983865989, 0.1226004003, 0.0].into(),
+    //         1.0,
+    //         0.0,
+    //     ),
+    //     shared::PointParticle::new(
+    //         [0.0, 0.0, 0.0].into(),
+    //         [-0.7935463956, -0.4904016012, 0.0].into(),
+    //         0.5,
+    //         0.0,
+    //     ),
+    // ];
 
     // for _ in 0..1000 {
     //     let p = shared::PointParticle::new(
@@ -67,12 +67,51 @@ fn main() {
     //     points.push(p);
     // }
 
-    let mut sim = manual::BruteForceSimulation::new(
+    let mut points = vec![shared::PointParticle::new(
+        [0.0, 0.0, 0.0].into(),
+        [0.0, 0.0, 0.0].into(),
+        1.0,
+        0.0,
+    )];
+
+    let box_width = 10.0;
+
+    let disc_mass = 2e-1;
+    let disc_max: f64 = box_width / 4.0 / 1.2;
+    let disc_width: f64 = box_width / 20.0;
+    let disc_points = 10000;
+
+    // Same setup as rebound's Self-gravitating disc example
+    for _ in 0..disc_points {
+        let a: f64 = (disc_max.sqrt() - disc_width.sqrt() * rand::random::<f64>()
+            + disc_width.sqrt())
+        .powf(2.0);
+        let phi = rand::random::<f64>() * 2.0 * std::f64::consts::PI;
+        let x = a * phi.cos();
+        let y = a * phi.sin();
+        let z = a * rand::random::<f64>() * 0.001 - 0.0005;
+        let mu = 1.0
+            + disc_mass * (a.powf(-1.5) - disc_width.powf(-1.5))
+                / (disc_max.powf(-1.5) - disc_width.powf(-1.5));
+        let vkep = (mu * 1.0).sqrt();
+        let vx = vkep * phi.sin();
+        let vy = -vkep * phi.cos();
+        let vz = 0.0;
+        let m = disc_mass / disc_points as f64;
+        points.push(shared::PointParticle::new(
+            [x, y, z].into(),
+            [vx, vy, vz].into(),
+            m,
+            0.0,
+        ));
+    }
+
+    let mut sim = manual::BarnsHutSimulation::new(
         points,
         LeapFrogIntegrator::new(),
-        Bounds::new([0.0, 0.0, 0.0].into(), 0.5),
+        Bounds::new([0.0, 0.0, 0.0].into(), box_width),
     );
-    *sim.dt_mut() = 0.0001;
+    *sim.dt_mut() = 3e-3;
     *sim.g_soft_mut() = 0.02;
 
     #[cfg(feature = "render")]

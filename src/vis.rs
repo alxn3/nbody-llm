@@ -76,7 +76,7 @@ where
 
     pub fn init(&mut self, renderer: &Renderer) {
         self.simulation.init();
-        self.simulation.render_init(renderer);
+        self.simulation.render_init(&renderer.context);
         self.reset();
     }
 
@@ -112,6 +112,11 @@ where
                         ui.label("Steps");
                         ui.with_layout(egui::Layout::top_down_justified(egui::Align::Max), |ui| {
                             ui.label(format!("{}", self.step_count));
+                        });
+                        ui.end_row();
+                        ui.label("N");
+                        ui.with_layout(egui::Layout::top_down_justified(egui::Align::Max), |ui| {
+                            ui.label(format!("{}", self.simulation.get_points().len()));
                         });
                         ui.end_row();
                     });
