@@ -81,7 +81,7 @@ fn main() {
             .arg("-xvf")
             .arg(&slang_tarball)
             .arg("-C")
-            .arg(&slang_dir.display().to_string())
+            .arg(slang_dir.display().to_string())
             .status()
             .expect("Failed to execute command")
             .success()
