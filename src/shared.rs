@@ -14,6 +14,7 @@ pub trait Float:
     num_traits::Float
     + std::fmt::Debug
     + std::fmt::Display
+    + Copy
     + Clone
     + PartialEq
     + bytemuck::Zeroable
@@ -57,6 +58,23 @@ pub trait ParticleSized<F: Float, const D: usize>: Particle<F, D> {
     fn get_radius(&mut self, radius: F);
 }
 
+#[derive(Debug, Clone)]
+pub struct SimulationSettings<F: Float> {
+    pub g: F,
+    pub g_soft: F,
+    pub dt: F,
+}
+
+impl<F: Float> Default for SimulationSettings<F> {
+    fn default() -> Self {
+        SimulationSettings {
+            g: F::from(1.0).unwrap(),
+            g_soft: F::from(0.0).unwrap(),
+            dt: F::from(1e-3).unwrap(),
+        }
+    }
+}
+
 pub trait Simulation<F: Float, const D: usize, P, I: Integrator<F, D, P>>: Clone
 where
     P: Particle<F, D>,
@@ -64,20 +82,16 @@ where
     fn new(points: Vec<P>, integrator: I, bounds: Bounds<F, D>) -> Self;
     fn init(&mut self);
     fn step(&mut self) {
-        self.step_by(self.dt());
+        self.step_by(self.settings().dt);
     }
     fn step_by(&mut self, dt: F);
     fn update_forces(&mut self);
     fn add_point(&mut self, point: P);
     fn remove_point(&mut self, index: usize);
     fn get_points(&self) -> &Vec<P>;
-    fn g(&self) -> F;
-    fn g_soft(&self) -> F;
-    fn dt(&self) -> F;
     fn elapsed(&self) -> F;
-    fn g_mut(&mut self) -> &mut F;
-    fn g_soft_mut(&mut self) -> &mut F;
-    fn dt_mut(&mut self) -> &mut F;
+    fn settings(&self) -> &SimulationSettings<F>;
+    fn settings_mut(&mut self) -> &mut SimulationSettings<F>;
     #[cfg(feature = "render")]
     fn render(&mut self, renderer: &mut Renderer);
     #[cfg(feature = "render")]

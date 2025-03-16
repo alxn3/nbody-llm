@@ -3,7 +3,7 @@ use web_time::{Duration, Instant};
 
 use nlib::{
     render::Renderer,
-    shared::{Float, Integrator, Particle, Simulation},
+    shared::{Float, Integrator, Particle, Simulation, SimulationSettings},
 };
 use winit::{
     application::ApplicationHandler,
@@ -35,9 +35,7 @@ where
     pub frame_list: [Duration; FRAME_SAMPLES],
     pub frame_index: usize,
     pub max_steps_per_frame: u64,
-    pub starting_dt: F,
-    pub starting_g: F,
-    pub starting_g_soft: F,
+    pub initial_settings: SimulationSettings<F>,
     pub paused: bool,
     pub step_by: u64,
     pub simulation: S,
@@ -144,7 +142,7 @@ where
                         ui.label("dt");
                         ui.add(
                             egui::Slider::new(
-                                self.simulation.dt_mut(),
+                                &mut self.simulation.settings_mut().dt,
                                 F::from(-0.005).unwrap()..=F::from(0.005).unwrap(),
                             )
                             .logarithmic(true)
@@ -155,7 +153,7 @@ where
                         ui.label("G");
                         ui.add(
                             egui::Slider::new(
-                                self.simulation.g_mut(),
+                                &mut self.simulation.settings_mut().g,
                                 F::from(-1.0).unwrap()..=F::from(2.0).unwrap(),
                             )
                             .handle_shape(egui::style::HandleShape::Rect { aspect_ratio: 0.50 })
@@ -165,7 +163,7 @@ where
                         ui.label("Softening");
                         ui.add(
                             egui::Slider::new(
-                                self.simulation.g_soft_mut(),
+                                &mut self.simulation.settings_mut().g_soft,
                                 F::from(0.0).unwrap()..=F::from(0.5).unwrap(),
                             )
                             .trailing_fill(true)
@@ -180,9 +178,7 @@ where
                         })
                         .clicked()
                     {
-                        *self.simulation.dt_mut() = self.starting_dt;
-                        *self.simulation.g_mut() = self.starting_g;
-                        *self.simulation.g_soft_mut() = self.starting_g_soft;
+                        *self.simulation.settings_mut() = self.initial_settings.clone();
                     }
                 });
                 ui.separator();
@@ -219,7 +215,7 @@ where
                     )
                     .is_pointer_button_down_on()
                 {
-                    let dt = -self.simulation.dt();
+                    let dt = -self.simulation.settings().dt;
                     for _ in 0..self.step_by {
                         self.simulation.step_by(dt);
                         self.step_count -= 1;
@@ -230,7 +226,7 @@ where
                             .on_hover_text("Press to rewind the simulation by the step size")
                             .clicked()
                         {
-                            let dt = -self.simulation.dt();
+                            let dt = -self.simulation.settings().dt;
                             for _ in 0..self.step_by {
                                 self.simulation.step_by(dt);
                                 self.step_count -= 1;
@@ -296,9 +292,7 @@ where
             frame_list: [Duration::ZERO; FRAME_SAMPLES],
             frame_index: 0,
             max_steps_per_frame: 100,
-            starting_dt: simulation.dt(),
-            starting_g: simulation.g(),
-            starting_g_soft: simulation.g_soft(),
+            initial_settings: simulation.settings().clone(),
             paused: false,
             step_by: 100,
             simulation_base: simulation.clone(),
@@ -454,7 +448,7 @@ where
                     ..
                 } => {
                     self.state.paused = true;
-                    let dt = -self.state.simulation.dt();
+                    let dt = -self.state.simulation.settings().dt;
                     for _ in 0..self.state.step_by {
                         self.state.simulation.step_by(dt);
                         self.state.step_count -= 1;

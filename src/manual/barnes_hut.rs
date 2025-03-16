@@ -3,7 +3,9 @@ use nalgebra::{SVector, SimdComplexField};
 #[cfg(feature = "render")]
 use crate::render::{BufferWrapper, PipelineType};
 
-use crate::shared::{AABB, Bounds, Float, Integrator, LeapFrogIntegrator, Particle, Simulation};
+use crate::shared::{
+    AABB, Bounds, Float, Integrator, LeapFrogIntegrator, Particle, Simulation, SimulationSettings,
+};
 
 #[derive(Clone)]
 enum NodeData {
@@ -87,9 +89,7 @@ where
     root: Option<OrthNode<F, D>>,
     bounds: Bounds<F, D>,
     integrator: I,
-    g: F,
-    dt: F,
-    g_soft: F,
+    settings: SimulationSettings<F>,
     elapsed: F,
     #[cfg(feature = "render")]
     points_buffer: Option<BufferWrapper>,
@@ -183,10 +183,12 @@ where
 
     fn calc_force(&self, node: &OrthNode<F, D>, point: &P) -> SVector<F, D> {
         let r = node.center_of_mass - *point.position();
-        let r_dist = SimdComplexField::simd_sqrt(r.norm_squared() + self.g_soft() * self.g_soft());
+        let r_dist = SimdComplexField::simd_sqrt(
+            r.norm_squared() + self.settings().g_soft * self.settings().g_soft,
+        );
         let r_cubed = r_dist * r_dist * r_dist;
         if node.bounds.half_width / r_dist < F::from(0.5).unwrap() {
-            r * (self.g() * node.mass / r_cubed)
+            r * (self.settings().g * node.mass / r_cubed)
         } else {
             node.children
                 .iter()
@@ -208,9 +210,7 @@ where
             bounds,
             integrator,
             root: None,
-            g: F::from(1.0).unwrap(),
-            dt: F::from(0.001).unwrap(),
-            g_soft: F::from(0.0).unwrap(),
+            settings: SimulationSettings::default(),
             elapsed: F::from(0.0).unwrap(),
             #[cfg(feature = "render")]
             points_buffer: None,
@@ -226,28 +226,12 @@ where
         self.elapsed = F::from(0.0).unwrap();
     }
 
-    fn g(&self) -> F {
-        self.g
+    fn settings(&self) -> &SimulationSettings<F> {
+        &self.settings
     }
 
-    fn g_soft(&self) -> F {
-        self.g_soft
-    }
-
-    fn dt(&self) -> F {
-        self.dt
-    }
-
-    fn g_mut(&mut self) -> &mut F {
-        &mut self.g
-    }
-
-    fn g_soft_mut(&mut self) -> &mut F {
-        &mut self.g_soft
-    }
-
-    fn dt_mut(&mut self) -> &mut F {
-        &mut self.dt
+    fn settings_mut(&mut self) -> &mut SimulationSettings<F> {
+        &mut self.settings
     }
 
     fn elapsed(&self) -> F {

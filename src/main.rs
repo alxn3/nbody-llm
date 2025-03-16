@@ -111,8 +111,8 @@ fn main() {
         LeapFrogIntegrator::new(),
         Bounds::new([0.0, 0.0, 0.0].into(), box_width),
     );
-    *sim.dt_mut() = 3e-3;
-    *sim.g_soft_mut() = 0.02;
+    sim.settings_mut().dt = 3e-3;
+    sim.settings_mut().g_soft = 0.02;
 
     #[cfg(feature = "render")]
     vis::run(sim);

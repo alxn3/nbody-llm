@@ -3,7 +3,9 @@ use nalgebra::SimdComplexField;
 #[cfg(feature = "render")]
 use crate::render::{BufferWrapper, PipelineType};
 
-use crate::shared::{AABB, Bounds, Float, Integrator, LeapFrogIntegrator, Particle, Simulation};
+use crate::shared::{
+    AABB, Bounds, Float, Integrator, LeapFrogIntegrator, Particle, Simulation, SimulationSettings,
+};
 
 #[derive(Clone)]
 pub struct BruteForceSimulation<F: Float, const D: usize, P, I = LeapFrogIntegrator<F, D, P>>
@@ -14,9 +16,7 @@ where
     points: Vec<P>,
     bounds: Bounds<F, D>,
     integrator: I,
-    g: F,
-    dt: F,
-    g_soft: F,
+    settings: SimulationSettings<F>,
     elapsed: F,
     #[cfg(feature = "render")]
     points_buffer: Option<BufferWrapper>,
@@ -34,9 +34,7 @@ where
             points,
             bounds,
             integrator,
-            g: F::from(1.0).unwrap(),
-            dt: F::from(0.001).unwrap(),
-            g_soft: F::from(0.0).unwrap(),
+            settings: SimulationSettings::default(),
             elapsed: F::from(0.0).unwrap(),
             #[cfg(feature = "render")]
             points_buffer: None,
@@ -50,28 +48,12 @@ where
         self.elapsed = F::from(0.0).unwrap();
     }
 
-    fn g(&self) -> F {
-        self.g
+    fn settings(&self) -> &SimulationSettings<F> {
+        &self.settings
     }
 
-    fn g_soft(&self) -> F {
-        self.g_soft
-    }
-
-    fn dt(&self) -> F {
-        self.dt
-    }
-
-    fn g_mut(&mut self) -> &mut F {
-        &mut self.g
-    }
-
-    fn g_soft_mut(&mut self) -> &mut F {
-        &mut self.g_soft
-    }
-
-    fn dt_mut(&mut self) -> &mut F {
-        &mut self.dt
+    fn settings_mut(&mut self) -> &mut SimulationSettings<F> {
+        &mut self.settings
     }
 
     fn elapsed(&self) -> F {
@@ -83,7 +65,7 @@ where
             point.acceleration_mut().fill(F::from(0.0).unwrap());
         }
 
-        let g_soft2 = self.g_soft() * self.g_soft();
+        let g_soft2 = self.settings().g_soft * self.settings().g_soft;
         for i in 0..self.points.len() {
             for j in 0..i {
                 let r = self.points[i].position() - self.points[j].position();
@@ -91,7 +73,7 @@ where
                 let r_cubed = r_dist * r_dist * r_dist;
                 let m_i = self.points[i].get_mass();
                 let m_j = self.points[j].get_mass();
-                let force = self.g() / r_cubed;
+                let force = self.settings().g / r_cubed;
                 *self.points[i].acceleration_mut() -= r * force * m_j;
                 *self.points[j].acceleration_mut() += r * force * m_i;
             }
