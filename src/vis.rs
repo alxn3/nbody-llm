@@ -198,7 +198,9 @@ where
                         .on_hover_text("This button resets the simulation")
                         .clicked()
                     {
+                        let curr_settings = self.simulation.settings().clone();
                         self.simulation = self.simulation_base.clone();
+                        *self.simulation.settings_mut() = curr_settings;
                         self.init(renderer);
                     }
                 });
