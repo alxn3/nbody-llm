@@ -9,6 +9,11 @@ use wgpu::util::DeviceExt;
 
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
+pub trait Renderable {
+    fn render(&mut self, renderer: &mut Renderer);
+    fn render_init(&mut self, context: &Context);
+}
+
 pub struct Shader<'a> {
     pub name: &'static str,
     pub desc: wgpu::ShaderModuleDescriptor<'a>,

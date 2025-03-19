@@ -3,9 +3,6 @@
 use nalgebra::{SVector, SimdRealField};
 
 #[cfg(feature = "render")]
-use crate::render::{Context, Renderer};
-
-#[cfg(feature = "render")]
 pub trait RenderTraits: egui::emath::Numeric {}
 #[cfg(not(feature = "render"))]
 pub trait RenderTraits {}
@@ -92,10 +89,6 @@ where
     fn elapsed(&self) -> F;
     fn settings(&self) -> &SimulationSettings<F>;
     fn settings_mut(&mut self) -> &mut SimulationSettings<F>;
-    #[cfg(feature = "render")]
-    fn render(&mut self, renderer: &mut Renderer);
-    #[cfg(feature = "render")]
-    fn render_init(&mut self, context: &Context);
 }
 
 pub trait Integrator<F: Float, const D: usize, P: Particle<F, D>>: Clone {

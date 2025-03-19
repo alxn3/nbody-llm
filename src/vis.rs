@@ -2,7 +2,7 @@ use std::sync::Arc;
 use web_time::{Duration, Instant};
 
 use nlib::{
-    render::Renderer,
+    render::{Renderable, Renderer},
     shared::{Float, Integrator, Particle, Simulation, SimulationSettings},
 };
 use winit::{
@@ -26,7 +26,7 @@ struct SimulationState<F: Float, const D: usize, P, I, S>
 where
     P: Particle<F, D>,
     I: Integrator<F, D, P>,
-    S: Simulation<F, D, P, I>,
+    S: Simulation<F, D, P, I> + Renderable,
 {
     pub start_time: Instant,
     pub step_count: i64,
@@ -47,7 +47,7 @@ impl<F: Float, const D: usize, P, I, S> SimulationState<F, D, P, I, S>
 where
     P: Particle<F, D>,
     I: Integrator<F, D, P>,
-    S: Simulation<F, D, P, I>,
+    S: Simulation<F, D, P, I> + Renderable,
 {
     pub fn update_frame_time(&mut self, frame_time: Duration) {
         self.frame_list[self.frame_index] = frame_time;
@@ -268,7 +268,7 @@ struct App<F: Float, const D: usize, P, I, S>
 where
     P: Particle<F, D>,
     I: Integrator<F, D, P>,
-    S: Simulation<F, D, P, I>,
+    S: Simulation<F, D, P, I> + Renderable,
 {
     window: Option<Arc<Window>>,
     renderer: Option<Renderer>,
@@ -283,7 +283,7 @@ impl<F: Float, const D: usize, P, I, S> App<F, D, P, I, S>
 where
     P: Particle<F, D>,
     I: Integrator<F, D, P>,
-    S: Simulation<F, D, P, I>,
+    S: Simulation<F, D, P, I> + Renderable,
 {
     fn new(event_proxy: Arc<EventLoopProxy<UserEvent>>, simulation: S) -> Self {
         let state = SimulationState {
@@ -321,7 +321,7 @@ impl<F: Float, const D: usize, P, I, S> ApplicationHandler<UserEvent> for App<F,
 where
     P: Particle<F, D>,
     I: Integrator<F, D, P>,
-    S: Simulation<F, D, P, I>,
+    S: Simulation<F, D, P, I> + Renderable,
 {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.window.is_some() {
@@ -542,7 +542,7 @@ pub fn run<F: Float, const D: usize, P, I, S>(simulation: S)
 where
     P: Particle<F, D> + 'static,
     I: Integrator<F, D, P> + 'static,
-    S: Simulation<F, D, P, I> + 'static,
+    S: Simulation<F, D, P, I> + Renderable + 'static,
 {
     let event_loop = EventLoop::<UserEvent>::with_user_event().build().unwrap();
     let event_proxy = Arc::new(event_loop.create_proxy());

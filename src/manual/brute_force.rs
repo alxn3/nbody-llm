@@ -3,8 +3,12 @@ use nalgebra::SimdComplexField;
 #[cfg(feature = "render")]
 use crate::render::{BufferWrapper, PipelineType};
 
-use crate::shared::{
-    AABB, Bounds, Float, Integrator, LeapFrogIntegrator, Particle, Simulation, SimulationSettings,
+use crate::{
+    render::Renderable,
+    shared::{
+        AABB, Bounds, Float, Integrator, LeapFrogIntegrator, Particle, Simulation,
+        SimulationSettings,
+    },
 };
 
 #[derive(Clone)]
@@ -99,8 +103,15 @@ where
     fn get_points(&self) -> &Vec<P> {
         &self.points
     }
+}
 
-    #[cfg(feature = "render")]
+#[cfg(feature = "render")]
+impl<F: Float, P, I> Renderable for BruteForceSimulation<F, 3, P, I>
+where
+    F: Float,
+    P: Particle<F, 3>,
+    I: Integrator<F, 3, P>,
+{
     fn render(&mut self, renderer: &mut crate::render::Renderer) {
         use crate::shared::AABB;
 
@@ -145,7 +156,6 @@ where
         }
     }
 
-    #[cfg(feature = "render")]
     fn render_init(&mut self, context: &crate::render::Context) {
         self.points_buffer = Some(BufferWrapper::new(
             &context.device,

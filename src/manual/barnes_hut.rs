@@ -3,8 +3,12 @@ use nalgebra::{SVector, SimdComplexField};
 #[cfg(feature = "render")]
 use crate::render::{BufferWrapper, PipelineType};
 
-use crate::shared::{
-    AABB, Bounds, Float, Integrator, LeapFrogIntegrator, Particle, Simulation, SimulationSettings,
+use crate::{
+    render::Renderable,
+    shared::{
+        AABB, Bounds, Float, Integrator, LeapFrogIntegrator, Particle, Simulation,
+        SimulationSettings,
+    },
 };
 
 #[derive(Clone)]
@@ -224,6 +228,7 @@ where
     fn init(&mut self) {
         self.integrator.init();
         self.elapsed = F::from(0.0).unwrap();
+        self.build_tree();
     }
 
     fn settings(&self) -> &SimulationSettings<F> {
@@ -270,8 +275,15 @@ where
     fn get_points(&self) -> &Vec<P> {
         &self.points
     }
+}
 
-    #[cfg(feature = "render")]
+#[cfg(feature = "render")]
+impl<F, P, I> Renderable for BarnsHutSimulation<F, 3, P, I>
+where
+    F: Float,
+    P: Particle<F, 3>,
+    I: Integrator<F, 3, P>,
+{
     fn render(&mut self, renderer: &mut crate::render::Renderer) {
         use crate::shared::AABB;
 
@@ -338,7 +350,6 @@ where
         }
     }
 
-    #[cfg(feature = "render")]
     fn render_init(&mut self, context: &crate::render::Context) {
         self.points_buffer = Some(BufferWrapper::new(
             &context.device,
