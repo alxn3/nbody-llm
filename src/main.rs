@@ -1,5 +1,6 @@
 use nlib::{
     manual,
+    llm,
     shared::{self, Bounds, Integrator, LeapFrogIntegrator, Particle, Simulation},
 };
 
