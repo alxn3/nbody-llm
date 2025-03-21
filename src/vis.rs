@@ -169,6 +169,16 @@ where
                             .trailing_fill(true)
                             .clamping(egui::SliderClamping::Never),
                         );
+                        ui.end_row();
+                        ui.label("theta2");
+                        ui.add(
+                            egui::Slider::new(
+                                &mut self.simulation.settings_mut().theta2,
+                                F::from(0.0).unwrap()..=F::from(2.0).unwrap(),
+                            )
+                            .trailing_fill(true)
+                            .clamping(egui::SliderClamping::Never),
+                        );
                     });
                     ui.add_space(4.0);
                     if ui

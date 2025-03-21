@@ -60,6 +60,7 @@ pub struct SimulationSettings<F: Float> {
     pub g: F,
     pub g_soft: F,
     pub dt: F,
+    pub theta2: F,
 }
 
 impl<F: Float> Default for SimulationSettings<F> {
@@ -68,6 +69,7 @@ impl<F: Float> Default for SimulationSettings<F> {
             g: F::from(1.0).unwrap(),
             g_soft: F::from(0.0).unwrap(),
             dt: F::from(1e-3).unwrap(),
+            theta2: F::from(0.5).unwrap(),
         }
     }
 }
@@ -210,7 +212,8 @@ pub trait AABB<F: Float, const D: usize, P: Particle<F, D>> {
 #[derive(Debug, Clone)]
 pub struct Bounds<F: Float, const D: usize> {
     center: SVector<F, D>,
-    pub half_width: F,
+    half_width: F,
+    pub width: F,
 }
 
 impl<F: Float, const D: usize> AABB<F, D, PointParticle<F, D>> for Bounds<F, D> {
@@ -232,6 +235,7 @@ impl<F: Float, const D: usize> Bounds<F, D> {
         Self {
             center,
             half_width: width * F::from(0.5).unwrap(),
+            width,
         }
     }
 
@@ -248,6 +252,7 @@ impl<F: Float, const D: usize> Bounds<F, D> {
 
     pub fn create_orthant(&self, orthant: usize) -> Self {
         let mut center = self.center();
+        let width = self.width * F::from(0.5).unwrap();
         let half_width = self.half_width * F::from(0.5).unwrap();
         for i in 0..D {
             if orthant & (1 << i) != 0 {
@@ -256,6 +261,10 @@ impl<F: Float, const D: usize> Bounds<F, D> {
                 center[i] -= half_width;
             }
         }
-        Self { center, half_width }
+        Self {
+            center,
+            half_width,
+            width,
+        }
     }
 }

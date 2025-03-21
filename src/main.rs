@@ -77,23 +77,23 @@ fn main() {
     let box_width = 10.0;
 
     let disc_mass = 2e-1;
-    let disc_max: f64 = box_width / 4.0 / 1.2;
-    let disc_width: f64 = box_width / 20.0;
+    let disc_max: f64 = box_width / 2.0 / 1.2;
+    let disc_min: f64 = box_width / 10.0;
     let disc_points = 10000;
 
     // Same setup as rebound's Self-gravitating disc example
     for _ in 0..disc_points {
-        let a: f64 = (disc_max.sqrt() - disc_width.sqrt() * rand::random::<f64>()
-            + disc_width.sqrt())
-        .powf(2.0);
+        let a: f64 = ((disc_max.powf(-0.5) - disc_min.powf(-0.5)) * rand::random::<f64>()
+            + disc_min.powf(-0.5))
+        .powf(-2.0);
         let phi = rand::random::<f64>() * 2.0 * std::f64::consts::PI;
         let x = a * phi.cos();
         let y = a * phi.sin();
         let z = a * rand::random::<f64>() * 0.001 - 0.0005;
         let mu = 1.0
-            + disc_mass * (a.powf(-1.5) - disc_width.powf(-1.5))
-                / (disc_max.powf(-1.5) - disc_width.powf(-1.5));
-        let vkep = (mu * 1.0).sqrt();
+            + disc_mass * (a.powf(-1.5) - disc_min.powf(-1.5))
+                / (disc_max.powf(-1.5) - disc_min.powf(-1.5));
+        let vkep = (mu * 1.0 / a).sqrt();
         let vx = vkep * phi.sin();
         let vy = -vkep * phi.cos();
         let vz = 0.0;
@@ -111,8 +111,9 @@ fn main() {
         LeapFrogIntegrator::new(),
         Bounds::new([0.0, 0.0, 0.0].into(), box_width),
     );
-    sim.settings_mut().dt = 3e-3;
+    sim.settings_mut().dt = 3e-2;
     sim.settings_mut().g_soft = 0.02;
+    sim.settings_mut().theta2 = 1.0;
 
     #[cfg(feature = "render")]
     vis::run(sim);

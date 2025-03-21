@@ -117,10 +117,6 @@ where
     ) -> OrthNode<F, D> {
         match node {
             Some(mut node) => {
-                if !node.bounds.contains(self.points[point_index].position()) {
-                    log::info!("Node bounds: {:?}", node.bounds);
-                    log::info!("Point position: {:?}", self.points[point_index].position());
-                }
                 assert!(node.bounds.contains(self.points[point_index].position()));
                 match node.node_data {
                     NodeData::PointIndex(index) => {
@@ -187,11 +183,11 @@ where
 
     fn calc_force(&self, node: &OrthNode<F, D>, point: &P) -> SVector<F, D> {
         let r = node.center_of_mass - *point.position();
-        let r_dist = SimdComplexField::simd_sqrt(
-            r.norm_squared() + self.settings().g_soft * self.settings().g_soft,
-        );
-        let r_cubed = r_dist * r_dist * r_dist;
-        if node.bounds.half_width / r_dist < F::from(0.5).unwrap() {
+        let r2 = r.norm_squared();
+        if node.bounds.width * node.bounds.width < self.settings().theta2 * r2 {
+            let r_dist =
+                SimdComplexField::simd_sqrt(r2 + self.settings().g_soft * self.settings().g_soft);
+            let r_cubed = r_dist * r_dist * r_dist;
             r * (self.settings().g * node.mass / r_cubed)
         } else {
             node.children
