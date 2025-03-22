@@ -534,13 +534,13 @@ where
 
                 self.state.frame_count += 1;
 
-                self.state.step_time = start.elapsed();
-                self.state.simulation.step();
-                self.state.step_count += 1;
-                self.state.step_time = start.elapsed() - self.state.step_time;
-                let mut i = 1;
                 if self.state.paused {
                 } else {
+                    self.state.step_time = start.elapsed();
+                    self.state.simulation.step();
+                    self.state.step_count += 1;
+                    self.state.step_time = start.elapsed() - self.state.step_time;
+                    let mut i = 1;
                     while start.elapsed()
                         < Duration::from_nanos(NANOS_PER_SECOND / self.state.max_fps as u64)
                     {
