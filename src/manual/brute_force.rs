@@ -1,15 +1,12 @@
 use nalgebra::SimdComplexField;
 
 #[cfg(feature = "render")]
-use crate::render::{BufferWrapper, PipelineType};
+use crate::render::{BufferWrapper, PipelineType, Renderable};
 
-use crate::{
-    render::Renderable,
-    shared::{
+use crate::shared::{
         AABB, Bounds, Float, Integrator, LeapFrogIntegrator, Particle, Simulation,
         SimulationSettings,
-    },
-};
+    };
 
 #[derive(Clone)]
 pub struct BruteForceSimulation<F: Float, const D: usize, P, I = LeapFrogIntegrator<F, D, P>>

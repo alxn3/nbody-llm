@@ -106,7 +106,7 @@ fn main() {
         ));
     }
 
-    let mut sim = manual::BarnsHutSimulation::new(
+    let mut sim = manual::BarnesHutPoolSimulation::new(
         points,
         LeapFrogIntegrator::new(),
         Bounds::new([0.0, 0.0, 0.0].into(), box_width),
@@ -119,6 +119,7 @@ fn main() {
     vis::run(sim);
     #[cfg(not(feature = "render"))]
     {
+        sim.init();
         let start = std::time::Instant::now();
 
         let mut i = 0;

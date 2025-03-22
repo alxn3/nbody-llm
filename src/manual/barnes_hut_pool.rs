@@ -1,14 +1,11 @@
 use nalgebra::{SVector, SimdComplexField};
+use rayon::prelude::*;
 
 #[cfg(feature = "render")]
-use crate::render::{BufferWrapper, PipelineType};
+use crate::render::{BufferWrapper, PipelineType, Renderable};
 
-use crate::{
-    render::Renderable,
-    shared::{
-        AABB, Bounds, Float, Integrator, LeapFrogIntegrator, Particle, Simulation,
-        SimulationSettings,
-    },
+use crate::shared::{
+    AABB, Bounds, Float, Integrator, LeapFrogIntegrator, Particle, Simulation, SimulationSettings,
 };
 
 #[derive(Clone)]
@@ -18,7 +15,7 @@ enum NodeData {
 }
 
 #[derive(Clone)]
-pub struct OrthNode<F: Float, const D: usize> {
+struct OrthNode<F: Float, const D: usize> {
     center_of_mass: SVector<F, D>,
     bounds: Bounds<F, D>,
     mass: F,
@@ -40,7 +37,7 @@ impl<F: Float, const D: usize> OrthNode<F, D> {
     }
 }
 
-pub struct OrthNodeIterator<'a, F: Float, const D: usize> {
+struct OrthNodeIterator<'a, F: Float, const D: usize> {
     current: Vec<&'a OrthNode<F, D>>,
     next: Vec<&'a OrthNode<F, D>>,
     current_index: usize,
@@ -83,10 +80,9 @@ impl<'a, F: Float, const D: usize> IntoIterator for &'a OrthNode<F, D> {
     }
 }
 
-#[derive(Clone)]
-pub struct BarnsHutSimulation<F: Float, const D: usize, P, I = LeapFrogIntegrator<F, D, P>>
+pub struct BarnesHutPoolSimulation<F: Float, const D: usize, P, I = LeapFrogIntegrator<F, D, P>>
 where
-    P: Particle<F, D>,
+    P: Particle<F, D> + Sized + Send,
     I: Integrator<F, D, P>,
 {
     points: Vec<P>,
@@ -95,6 +91,8 @@ where
     integrator: I,
     settings: SimulationSettings<F>,
     elapsed: F,
+    pool: Option<rayon::ThreadPool>,
+    num_threads: usize,
     #[cfg(feature = "render")]
     points_buffer: Option<BufferWrapper>,
     #[cfg(feature = "render")]
@@ -103,10 +101,35 @@ where
     num_bounds: u32,
 }
 
-impl<F: Float, const D: usize, P, I> BarnsHutSimulation<F, D, P, I>
+impl<F: Float, const D: usize, P, I> Clone for BarnesHutPoolSimulation<F, D, P, I>
 where
-    P: Particle<F, D>,
-    I: Integrator<F, D, P>,
+    P: Particle<F, D> + Send + Sync,
+    I: Integrator<F, D, P> + Send + Sync,
+{
+    fn clone(&self) -> Self {
+        Self {
+            points: self.points.clone(),
+            root: self.root.clone(),
+            bounds: self.bounds.clone(),
+            integrator: self.integrator.clone(),
+            settings: self.settings.clone(),
+            elapsed: self.elapsed,
+            pool: None,
+            num_threads: self.num_threads,
+            #[cfg(feature = "render")]
+            points_buffer: None,
+            #[cfg(feature = "render")]
+            bounds_buffer: None,
+            #[cfg(feature = "render")]
+            num_bounds: self.num_bounds,
+        }
+    }
+}
+
+impl<F: Float, const D: usize, P, I> BarnesHutPoolSimulation<F, D, P, I>
+where
+    P: Particle<F, D> + Send + Sync,
+    I: Integrator<F, D, P> + Send + Sync,
 {
     fn add_point_to_tree(
         &mut self,
@@ -181,28 +204,31 @@ where
         }
     }
 
-    fn calc_force(&self, node: &OrthNode<F, D>, point: &P) -> SVector<F, D> {
+    fn calc_force(
+        node: &OrthNode<F, D>,
+        point: &P,
+        settings: &SimulationSettings<F>,
+    ) -> SVector<F, D> {
         let r = node.center_of_mass - *point.position();
         let r2 = r.norm_squared();
-        if node.bounds.width * node.bounds.width < self.settings().theta2 * r2 {
-            let r_dist =
-                SimdComplexField::simd_sqrt(r2 + self.settings().g_soft * self.settings().g_soft);
+        if node.bounds.width * node.bounds.width < settings.theta2 * r2 {
+            let r_dist = SimdComplexField::simd_sqrt(r2 + settings.g_soft * settings.g_soft);
             let r_cubed = r_dist * r_dist * r_dist;
-            r * (self.settings().g * node.mass / r_cubed)
+            r * (settings.g * node.mass / r_cubed)
         } else {
             node.children
                 .iter()
                 .filter_map(|c| c.as_ref())
-                .map(|c| self.calc_force(c, point))
+                .map(|c| Self::calc_force(c, point, settings))
                 .fold(SVector::<F, D>::zeros(), |acc, f| acc + f)
         }
     }
 }
 
-impl<F: Float, const D: usize, P, I> Simulation<F, D, P, I> for BarnsHutSimulation<F, D, P, I>
+impl<F: Float, const D: usize, P, I> Simulation<F, D, P, I> for BarnesHutPoolSimulation<F, D, P, I>
 where
-    P: Particle<F, D>,
-    I: Integrator<F, D, P>,
+    P: Particle<F, D> + Send + Sync,
+    I: Integrator<F, D, P> + Send + Sync,
 {
     fn new(points: Vec<P>, integrator: I, bounds: Bounds<F, D>) -> Self {
         Self {
@@ -212,6 +238,8 @@ where
             root: None,
             settings: SimulationSettings::default(),
             elapsed: F::from(0.0).unwrap(),
+            pool: None,
+            num_threads: 0,
             #[cfg(feature = "render")]
             points_buffer: None,
             #[cfg(feature = "render")]
@@ -224,6 +252,13 @@ where
     fn init(&mut self) {
         self.integrator.init();
         self.elapsed = F::from(0.0).unwrap();
+        self.pool = Some(
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(self.num_threads)
+                .build()
+                .unwrap(),
+        );
+
         self.build_tree();
     }
 
@@ -242,14 +277,17 @@ where
     fn update_forces(&mut self) {
         self.build_tree();
 
-        for point in self.points.iter_mut() {
-            point.acceleration_mut().fill(F::from(0.0).unwrap());
-        }
-
-        for i in 0..self.points.len() {
-            let force = self.calc_force(self.root.as_ref().unwrap(), &self.points[i]);
-            *self.points[i].acceleration_mut() += force;
-        }
+        let pool = self.pool.take().unwrap();
+        let root = self.root.take().unwrap();
+        let settings = self.settings.clone();
+        pool.install(|| {
+            self.points.par_iter_mut().for_each(|point| {
+                let force = Self::calc_force(&root, point, &settings);
+                *point.acceleration_mut() = force;
+            })
+        });
+        self.root = Some(root);
+        self.pool = Some(pool);
     }
 
     fn step_by(&mut self, dt: F) {
@@ -274,10 +312,10 @@ where
 }
 
 #[cfg(feature = "render")]
-impl<F, P, I> Renderable for BarnsHutSimulation<F, 3, P, I>
+impl<F, P, I> Renderable for BarnesHutPoolSimulation<F, 3, P, I>
 where
     F: Float,
-    P: Particle<F, 3>,
+    P: Particle<F, 3> + Send,
     I: Integrator<F, 3, P>,
 {
     fn render(&mut self, renderer: &mut crate::render::Renderer) {
