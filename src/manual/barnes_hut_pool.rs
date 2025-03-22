@@ -277,17 +277,15 @@ where
     fn update_forces(&mut self) {
         self.build_tree();
 
-        let pool = self.pool.take().unwrap();
-        let root = self.root.take().unwrap();
-        let settings = self.settings.clone();
-        pool.install(|| {
-            self.points.par_iter_mut().for_each(|point| {
-                let force = Self::calc_force(&root, point, &settings);
-                *point.acceleration_mut() = force;
-            })
-        });
-        self.root = Some(root);
-        self.pool = Some(pool);
+        if let Some(root) = &self.root {
+            let settings = self.settings.clone();
+            self.pool.as_ref().unwrap().install(|| {
+                self.points.par_iter_mut().for_each(|point| {
+                    let force = Self::calc_force(root, point, &settings);
+                    *point.acceleration_mut() = force;
+                })
+            });
+        }
     }
 
     fn step_by(&mut self, dt: F) {
