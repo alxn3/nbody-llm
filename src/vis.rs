@@ -36,6 +36,7 @@ where
     pub frame_index: usize,
     pub max_steps_per_frame: u64,
     pub initial_settings: SimulationSettings<F>,
+    pub step_time: Duration,
     pub paused: bool,
     pub step_by: u64,
     pub simulation: S,
@@ -110,6 +111,11 @@ where
                         ui.label("Steps");
                         ui.with_layout(egui::Layout::top_down_justified(egui::Align::Max), |ui| {
                             ui.label(format!("{}", self.step_count));
+                        });
+                        ui.end_row();
+                        ui.label("Step time(s)");
+                        ui.with_layout(egui::Layout::top_down_justified(egui::Align::Max), |ui| {
+                            ui.label(format!("{:.05}", self.step_time.as_secs_f64()));
                         });
                         ui.end_row();
                         ui.label("N");
@@ -282,7 +288,7 @@ where
 {
     window: Option<Arc<Window>>,
     renderer: Option<Renderer>,
-    event_proxy: Arc<EventLoopProxy<UserEvent>>,
+    _event_proxy: Arc<EventLoopProxy<UserEvent>>,
     gui_state: Option<egui_winit::State>,
     state: SimulationState<F, D, P, I, S>,
     modifiers: ModifiersState,
@@ -307,6 +313,7 @@ where
             initial_settings: simulation.settings().clone(),
             paused: false,
             step_by: 100,
+            step_time: Duration::ZERO,
             simulation_base: simulation.clone(),
             simulation,
             _phantom: std::marker::PhantomData,
@@ -315,7 +322,7 @@ where
         Self {
             window: None,
             renderer: None,
-            event_proxy,
+            _event_proxy: event_proxy,
             gui_state: None,
             state,
             modifiers: ModifiersState::empty(),
@@ -527,7 +534,11 @@ where
 
                 self.state.frame_count += 1;
 
-                let mut i = 0;
+                self.state.step_time = start.elapsed();
+                self.state.simulation.step();
+                self.state.step_count += 1;
+                self.state.step_time = start.elapsed() - self.state.step_time;
+                let mut i = 1;
                 if self.state.paused {
                 } else {
                     while start.elapsed()
@@ -562,7 +573,7 @@ where
     #[cfg(not(target_arch = "wasm32"))]
     {
         let mut app = App::new(event_proxy, simulation);
-        event_loop.run_app(&mut app);
+        event_loop.run_app(&mut app).unwrap();
     }
     #[cfg(target_arch = "wasm32")]
     {
