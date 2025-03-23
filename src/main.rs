@@ -148,6 +148,6 @@ fn main() {
         }
 
         let elapsed = start.elapsed();
-        println!("Elapsed: {:?}", elapsed);
+        log::info!("Elapsed: {:?}", elapsed);
     }
 }
