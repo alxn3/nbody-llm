@@ -1,5 +1,7 @@
 // This file defines shared behavior for the manual and LLM implementations of the N-body simulation.
 
+use std::iter::Sum;
+
 use nalgebra::{SVector, SimdRealField};
 
 #[cfg(feature = "render")]
@@ -16,6 +18,7 @@ pub trait Float:
     + PartialEq
     + bytemuck::Zeroable
     + SimdRealField
+    + Sum
     + RenderTraits
     + 'static
 {
