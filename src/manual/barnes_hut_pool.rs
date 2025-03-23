@@ -177,7 +177,7 @@ where
                 .iter()
                 .filter_map(|c| c.as_ref())
                 .map(|c| Self::calc_force(c, point, settings))
-                .fold(SVector::<F, D>::zeros(), |acc, f| acc + f)
+                .sum()
         }
     }
 }

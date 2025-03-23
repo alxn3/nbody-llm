@@ -8,26 +8,18 @@ use crate::shared::{
 };
 
 #[derive(Clone)]
-enum NodeData {
-    PointIndex(usize),
-    PointCount(usize),
-}
-
-#[derive(Clone)]
 struct OrthNode<F: Float, const D: usize> {
     center_of_mass: SVector<F, D>,
     bounds: Bounds<F, D>,
     mass: F,
-    node_data: NodeData,
     // TODO: use an array with size 2^D after const_generics stabilizes #![feature(const_generics)]
     children: Vec<Option<OrthNode<F, D>>>,
 }
 
 impl<F: Float, const D: usize> OrthNode<F, D> {
-    fn new(bounds: Bounds<F, D>, node_data: NodeData) -> Self {
+    fn new(bounds: Bounds<F, D>) -> Self {
         Self {
             bounds,
-            node_data,
             // fill with none.
             children: vec![None; 1 << D],
             center_of_mass: SVector::<F, D>::zeros(),
@@ -104,76 +96,45 @@ where
     P: Particle<F, D>,
     I: Integrator<F, D, P>,
 {
-    fn add_point_to_tree(
-        &mut self,
-        point_index: usize,
-        node: Option<OrthNode<F, D>>,
-        parent: Option<&mut OrthNode<F, D>>,
-        orthant: usize,
-    ) -> OrthNode<F, D> {
-        match node {
-            Some(mut node) => {
-                assert!(node.bounds.contains(self.points[point_index].position()));
-                match node.node_data {
-                    NodeData::PointIndex(index) => {
-                        let o1 = node.bounds.get_orthant(self.points[index].position());
-                        let o2 = node.bounds.get_orthant(self.points[point_index].position());
-                        node.children[o1] = Some(self.add_point_to_tree(
-                            index,
-                            node.children[o1].take(),
-                            Some(&mut node),
-                            o1,
-                        ));
-                        node.children[o2] = Some(self.add_point_to_tree(
-                            point_index,
-                            node.children[o2].take(),
-                            Some(&mut node),
-                            o2,
-                        ));
-                        node.node_data = NodeData::PointCount(2);
-                        node
-                    }
-                    NodeData::PointCount(ref mut count) => {
-                        *count += 1;
-                        let point = &self.points[point_index];
-                        let orthant = node.bounds.get_orthant(point.position());
-                        node.children[orthant] = Some(self.add_point_to_tree(
-                            point_index,
-                            node.children[orthant].take(),
-                            Some(&mut node),
-                            orthant,
-                        ));
-                        node
-                    }
-                }
+    fn build_tree(points: &[&P], bounds: Bounds<F, D>) -> OrthNode<F, D> {
+        match points.len() {
+            0 => OrthNode::new(bounds),
+            1 => {
+                let point = &points[0];
+                let mut node = OrthNode::new(bounds);
+                node.center_of_mass = *point.position();
+                node.mass = point.get_mass();
+                node
             }
-            None => match parent {
-                Some(parent) => {
-                    let point = &self.points[point_index];
-                    let mut nn = OrthNode::new(
-                        parent.bounds.create_orthant(orthant),
-                        NodeData::PointIndex(point_index),
-                    );
-                    nn.center_of_mass = *point.position();
-                    nn.mass = point.get_mass();
-                    nn
+            _ => {
+                let mut orthants = vec![Vec::new(); 1 << D];
+                for point in points.iter() {
+                    let orthant = bounds.get_orthant(point.position());
+                    orthants[orthant].push(*point);
                 }
-                None => {
-                    let mut nn =
-                        OrthNode::new(self.bounds.clone(), NodeData::PointIndex(point_index));
-                    nn.center_of_mass = *self.points[point_index].position();
-                    nn.mass = self.points[point_index].get_mass();
-                    nn
-                }
-            },
-        }
-    }
 
-    fn build_tree(&mut self) {
-        self.root = None;
-        for i in 0..self.points.len() {
-            let root = self.root.take();
-            self.root = Some(self.add_point_to_tree(i, root, None, usize::MAX));
+                let children = orthants
+                    .iter()
+                    .enumerate()
+                    .map(|(i, orthant)| match orthant.len() {
+                        0 => None,
+                        _ => {
+                            let child_bounds = bounds.create_orthant(i);
+                            Some(Self::build_tree(orthant, child_bounds))
+                        }
+                    })
+                    .collect::<Vec<_>>();
+
+                let mut node = OrthNode::new(bounds);
+                node.children = children;
+                node.center_of_mass = points
+                    .iter()
+                    .map(|p| *p.position() * p.get_mass())
+                    .fold(SVector::<F, D>::zeros(), |acc, p| acc + p)
+                    / F::from(points.len()).unwrap();
+                node.mass = points.iter().map(|p| p.get_mass()).sum();
+                node
+            }
         }
     }
 
@@ -220,7 +181,10 @@ where
     fn init(&mut self) {
         self.integrator.init();
         self.elapsed = F::from(0.0).unwrap();
-        self.build_tree();
+        self.root = Some(Self::build_tree(
+            self.points.iter().collect::<Vec<_>>().as_slice(),
+            self.bounds.clone(),
+        ));
     }
 
     fn settings(&self) -> &SimulationSettings<F> {
@@ -236,8 +200,10 @@ where
     }
 
     fn update_forces(&mut self) {
-        self.build_tree();
-
+        self.root = Some(Self::build_tree(
+            self.points.iter().collect::<Vec<_>>().as_slice(),
+            self.bounds.clone(),
+        ));
         for i in 0..self.points.len() {
             let force = self.calc_force(self.root.as_ref().unwrap(), &self.points[i]);
             *self.points[i].acceleration_mut() = force;
