@@ -1,3 +1,5 @@
+use clap::Parser;
+
 use nlib::{
     llm, manual,
     shared::{self, Bounds, Integrator, LeapFrogIntegrator, Particle, Simulation},
@@ -23,19 +25,25 @@ fn init_logger() {
     }
 }
 
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    #[arg(short, long, default_value = "0")]
+    threads: usize,
+
+    #[arg(short, long, default_value = "10000")]
+    num_points: usize,
+}
+
 fn main() {
     init_logger();
 
-    let args = std::env::args().collect::<Vec<_>>();
-    if args.len() > 1 {
-        // check if the first argument is a number
-        if let Ok(num) = args[1].parse::<u32>() {
-            rayon::ThreadPoolBuilder::new()
-                .num_threads(num as usize)
-                .build_global()
-                .unwrap();
-        }
-    }
+    let args = Args::parse();
+
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(args.threads)
+        .build_global()
+        .unwrap();
 
     // let mut points: Vec<shared::PointParticle<f64, 3>> = vec![
     //     shared::PointParticle::new(
@@ -90,7 +98,7 @@ fn main() {
     let disc_mass = 2e-1;
     let disc_max: f64 = box_width / 2.0 / 1.2;
     let disc_min: f64 = box_width / 10.0;
-    let disc_points = 10000;
+    let disc_points = args.num_points;
 
     // Same setup as rebound's Self-gravitating disc example
     for _ in 0..disc_points {
