@@ -150,12 +150,12 @@ where
 
                 let mut node = OrthNode::new(bounds);
                 node.children = children;
+                node.mass = points.iter().map(|p| p.get_mass()).sum();
                 node.center_of_mass = points
                     .iter()
                     .map(|p| *p.position() * p.get_mass())
-                    .fold(SVector::<F, D>::zeros(), |acc, p| acc + p)
-                    / F::from(points.len()).unwrap();
-                node.mass = points.iter().map(|p| p.get_mass()).sum();
+                    .sum::<SVector::<F, D>>()
+                    / node.mass;
                 node
             }
         }
