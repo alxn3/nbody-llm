@@ -1,6 +1,5 @@
 use nlib::{
-    manual,
-    llm,
+    llm, manual,
     shared::{self, Bounds, Integrator, LeapFrogIntegrator, Particle, Simulation},
 };
 
@@ -26,6 +25,17 @@ fn init_logger() {
 
 fn main() {
     init_logger();
+
+    let args = std::env::args().collect::<Vec<_>>();
+    if args.len() > 1 {
+        // check if the first argument is a number
+        if let Ok(num) = args[1].parse::<u32>() {
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(num as usize)
+                .build_global()
+                .unwrap();
+        }
+    }
 
     // let mut points: Vec<shared::PointParticle<f64, 3>> = vec![
     //     shared::PointParticle::new(
