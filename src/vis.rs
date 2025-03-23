@@ -384,7 +384,7 @@ where
         #[cfg(target_arch = "wasm32")]
         {
             // window.request_redraw();
-            let proxy = self.event_proxy.clone();
+            let proxy = self._event_proxy.clone();
             wasm_bindgen_futures::spawn_local(async move {
                 proxy
                     .send_event(UserEvent::WebInitialized(
