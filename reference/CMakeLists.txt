@@ -17,16 +17,18 @@ ExternalProject_Add(
     GIT_TAG        4.4.6
     GIT_SHALLOW    TRUE
     CONFIGURE_COMMAND ""
-    BUILD_COMMAND make librebound -j${N}
+    BUILD_COMMAND OPENMP=1 make librebound -j${N}
     BUILD_IN_SOURCE TRUE
     INSTALL_COMMAND mv src/librebound.so ${CMAKE_CURRENT_BINARY_DIR}
 )
 ExternalProject_Get_Property(rebound SOURCE_DIR)
 
+find_package(OpenMP REQUIRED)
+
 add_executable(example main.c)
 add_dependencies(example rebound)
 
-set(LIBRARIES m)
+set(LIBRARIES m OpenMP::OpenMP_C)
 
 target_include_directories(example PRIVATE ${SOURCE_DIR}/src)
 target_link_libraries(example ${LIBRARIES} ${CMAKE_CURRENT_BINARY_DIR}/librebound.so)
