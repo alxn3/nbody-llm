@@ -15,11 +15,13 @@ egui = { version = "0.31", optional = true }
 egui-wgpu = { version = "0.31", features = ["winit"], optional = true }
 glam = { version = "0.30.0", optional = true }
 log = "0.4"
+morton-encoding = "2.0.1"
 nalgebra = { version = "0.33.2", features = ["bytemuck"] }
 num-traits = "0.2"
 pollster = { version = "0.4.0", optional = true }
 rand = "0.9"
 rayon = "1.10"
+smallvec = "1.15.0"
 web-time = "1.1.0"
 wgpu = { version = "24.0.1", optional = true }
 winit = { version = "0.30", optional = true }

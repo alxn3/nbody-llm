@@ -1,4 +1,8 @@
 {
     "cmake.sourceDirectory": "${workspaceFolder}/reference",
+    "workbench.colorCustomizations": {
+        "minimap.background": "#00000000",
+        "scrollbar.shadow": "#00000000"
+    },
     // "rust-analyzer.cargo.target": "wasm32-unknown-unknown",
 }
