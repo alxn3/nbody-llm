@@ -212,7 +212,7 @@ pub trait AABB<F: Float, const D: usize, P: Particle<F, D>> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct Bounds<F: Float, const D: usize> {
     center: SVector<F, D>,
     half_width: F,

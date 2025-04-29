@@ -126,7 +126,7 @@ fn main() {
         ));
     }
 
-    let mut sim = manual::BarnesHutPoolSimulation::new(
+    let mut sim = llm::create_barnes_hut_3d(
         points,
         LeapFrogIntegrator::new(),
         Bounds::new([0.0, 0.0, 0.0].into(), box_width),
@@ -139,16 +139,23 @@ fn main() {
     vis::run(sim);
     #[cfg(not(feature = "render"))]
     {
+        println!("Running simulation without rendering...");
         sim.init();
         let start = std::time::Instant::now();
 
         let mut i = 0;
-        while i < 1000 {
+        let steps = 1000;
+
+        // Print progress every 100 steps
+        while i < steps {
             sim.step();
             i += 1;
         }
 
         let elapsed = start.elapsed();
-        log::info!("Elapsed: {:?}", elapsed);
+        println!("Elapsed: {:?}", elapsed);
+
+        let steps_per_second = steps as f64 / elapsed.as_secs_f64();
+        println!("Performance: {:.2} steps/second", steps_per_second);
     }
 }
