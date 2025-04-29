@@ -598,7 +598,7 @@ where
             let local_node = local_arena.get(local_idx);
 
             // Create a copy of the node with empty children
-            let mut main_node = Node {
+            let main_node = Node {
                 bounds: local_node.bounds.clone(),
                 center_of_mass: local_node.center_of_mass,
                 mass: local_node.mass,
@@ -739,10 +739,7 @@ where
                 // Avoid expensive multiple divisions by computing inverse distance factors
                 let r_soft2 = r2 + g_soft2;
 
-                // Use fast inverse square root approximation when possible
-                #[cfg(feature = "fast_math")]
-                let inv_r = F::from(1.0).unwrap() / SimdComplexField::simd_sqrt(r_soft2);
-                #[cfg(not(feature = "fast_math"))]
+                // Use single implementation without conditional compilation
                 let inv_r = F::from(1.0).unwrap() / SimdComplexField::simd_sqrt(r_soft2);
 
                 let inv_r3 = inv_r * inv_r * inv_r;
@@ -787,6 +784,7 @@ where
         force
     }
 
+    #[cfg(feature = "render")]
     fn get_nodes_for_rendering(&self) -> Box<dyn Iterator<Item = (usize, &Node<F, D>)> + '_> {
         match self.root_idx {
             Some(root_idx) => Box::new(NodeIterator {
