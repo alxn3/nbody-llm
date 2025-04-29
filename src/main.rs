@@ -40,6 +40,7 @@ fn main() {
 
     let args = Args::parse();
 
+    #[cfg(not(target_arch = "wasm32"))]
     rayon::ThreadPoolBuilder::new()
         .num_threads(args.threads)
         .build_global()

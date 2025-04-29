@@ -1,11 +1,15 @@
 # N-Body Simulation
 
+This repository contains code that does N-body simulation on a variable number of points. It is able to be configured to use different methods such as barnes-hut or brute-force each with adjustable parameters if applicable. There are two different implementations of the barnes-hut algorithm--one created manually and another through strictly LLMs with minimal human intervention.
+
 ## Running
 
 To run the project, just type the following command in the terminal:
 ```sh
 cargo run
 ```
+
+By default, the project runs with the visualizer. To disable all visualizations, please add the `--no-default-features` flag when running.
 
 ### Web
 

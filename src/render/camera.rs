@@ -164,6 +164,33 @@ impl CameraController for OrbitCameraController {
                     true
                 }
             },
+            WindowEvent::Touch(winit::event::Touch {
+                phase, location, ..
+            }) => match phase {
+                winit::event::TouchPhase::Started => {
+                    self.pressed = true;
+                    false
+                }
+                winit::event::TouchPhase::Ended => {
+                    self.pressed = false;
+                    self.last_cursor_pos = None;
+                    false
+                }
+                winit::event::TouchPhase::Moved => {
+                    if let Some(last_cursor_pos) = self.last_cursor_pos {
+                        let delta = (
+                            location.x - last_cursor_pos.x,
+                            location.y - last_cursor_pos.y,
+                        );
+                        self.yaw -= delta.0 as f32 * 0.005;
+                        self.pitch += delta.1 as f32 * 0.005;
+                        self.pitch = self.pitch.clamp(-1.5, 1.5);
+                    }
+                    self.last_cursor_pos = Some(*location);
+                    true
+                }
+                _ => false,
+            },
             _ => false,
         }
     }

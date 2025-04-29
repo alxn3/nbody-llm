@@ -343,7 +343,13 @@ pub struct Context {
 
 impl Context {
     pub async fn init_async(window: Arc<Window>) -> Self {
+        #[cfg(target_arch = "wasm32")]
+        let instance =
+            wgpu::util::new_instance_with_webgpu_detection(&wgpu::InstanceDescriptor::default())
+                .await;
+        #[cfg(not(target_arch = "wasm32"))]
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::from_env_or_default());
+
         let surface = instance.create_surface(window.clone()).unwrap();
 
         let adapter = instance
@@ -356,12 +362,8 @@ impl Context {
             .expect("Unable to find a suitable GPU adapter!");
 
         #[cfg(target_arch = "wasm32")]
-        let limits = if let Some(win) = web_sys::window() {
-            if win.navigator().gpu().is_object() {
-                wgpu::Limits::default().using_resolution(adapter.limits())
-            } else {
-                wgpu::Limits::downlevel_webgl2_defaults().using_resolution(adapter.limits())
-            }
+        let limits = if wgpu::util::is_browser_webgpu_supported().await {
+            wgpu::Limits::default().using_resolution(adapter.limits())
         } else {
             wgpu::Limits::downlevel_webgl2_defaults().using_resolution(adapter.limits())
         };
@@ -383,8 +385,9 @@ impl Context {
 
         let size = window.inner_size();
         let mut surface_config = surface
-            .get_default_config(&adapter, size.width, size.height)
+            .get_default_config(&adapter, size.width.max(1), size.height.max(1))
             .expect("Surface configuration not supported by adapter");
+        #[cfg(not(target_arch = "wasm32"))]
         surface_config
             .view_formats
             .push(surface_config.format.remove_srgb_suffix());
