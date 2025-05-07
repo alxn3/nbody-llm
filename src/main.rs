@@ -49,47 +49,6 @@ fn main() {
         .build_global()
         .unwrap();
 
-    // let mut points: Vec<shared::PointParticle<f64, 3>> = vec![
-    //     shared::PointParticle::new(
-    //         [-1.0, 0.0, 0.0].into(),
-    //         [0.1983865989, 0.1226004003, 0.0].into(),
-    //         1.0,
-    //         0.0,
-    //     ),
-    //     shared::PointParticle::new(
-    //         [1.0, 0.0, 0.0].into(),
-    //         [0.1983865989, 0.1226004003, 0.0].into(),
-    //         1.0,
-    //         0.0,
-    //     ),
-    //     shared::PointParticle::new(
-    //         [0.0, 0.0, 0.0].into(),
-    //         [-0.7935463956, -0.4904016012, 0.0].into(),
-    //         0.5,
-    //         0.0,
-    //     ),
-    // ];
-
-    // for _ in 0..1000 {
-    //     let p = shared::PointParticle::new(
-    //         [
-    //             rand::random::<f64>() * 2.0 - 1.0,
-    //             rand::random::<f64>() * 2.0 - 1.0,
-    //             rand::random::<f64>() * 2.0 - 1.0,
-    //         ]
-    //         .into(),
-    //         [
-    //             rand::random::<f64>() * 2.0 - 1.0,
-    //             rand::random::<f64>() * 2.0 - 1.0,
-    //             rand::random::<f64>() * 2.0 - 1.0,
-    //         ]
-    //         .into(),
-    //         rand::random::<f64>(),
-    //         0.0,
-    //     );
-    //     points.push(p);
-    // }
-
     let mut points = vec![shared::PointParticle::new(
         [0.0, 0.0, 0.0].into(),
         [0.0, 0.0, 0.0].into(),
@@ -135,7 +94,7 @@ fn main() {
     //     Bounds::new([0.0, 0.0, 0.0].into(), box_width),
     // );
 
-    let mut sim = manual::BarnesHutPoolSimulation::new(
+    let mut sim = manual::BarnesHutSimulation::new(
         points,
         LeapFrogIntegrator::new(),
         Bounds::new([0.0, 0.0, 0.0].into(), box_width),

@@ -1,6 +1,6 @@
-mod barnes_hut_pool;
+mod barnes_hut;
 mod brute_force;
 
 pub use brute_force::*;
 
-pub use barnes_hut_pool::*;
+pub use barnes_hut::*;

@@ -90,7 +90,7 @@ where
     }
 }
 
-pub struct BarnesHutPoolSimulation<F: Float, const D: usize, P, I = LeapFrogIntegrator<F, D, P>>
+pub struct BarnesHutSimulation<F: Float, const D: usize, P, I = LeapFrogIntegrator<F, D, P>>
 where
     P: Particle<F, D> + Sized + Send,
     I: Integrator<F, D, P>,
@@ -110,7 +110,7 @@ where
     num_bounds: u32,
 }
 
-impl<F: Float, const D: usize, P, I> Clone for BarnesHutPoolSimulation<F, D, P, I>
+impl<F: Float, const D: usize, P, I> Clone for BarnesHutSimulation<F, D, P, I>
 where
     P: Particle<F, D> + Send + Sync,
     I: Integrator<F, D, P> + Send + Sync,
@@ -134,7 +134,7 @@ where
     }
 }
 
-impl<F: Float, const D: usize, P, I> BarnesHutPoolSimulation<F, D, P, I>
+impl<F: Float, const D: usize, P, I> BarnesHutSimulation<F, D, P, I>
 where
     P: Particle<F, D> + Send + Sync,
     I: Integrator<F, D, P> + Send + Sync,
@@ -203,7 +203,7 @@ where
     }
 }
 
-impl<F: Float, const D: usize, P, I> Simulation<F, D, P, I> for BarnesHutPoolSimulation<F, D, P, I>
+impl<F: Float, const D: usize, P, I> Simulation<F, D, P, I> for BarnesHutSimulation<F, D, P, I>
 where
     P: Particle<F, D> + Send + Sync,
     I: Integrator<F, D, P> + Send + Sync,
@@ -284,7 +284,7 @@ where
 }
 
 #[cfg(feature = "render")]
-impl<F, P, I> Renderable for BarnesHutPoolSimulation<F, 3, P, I>
+impl<F, P, I> Renderable for BarnesHutSimulation<F, 3, P, I>
 where
     F: Float,
     P: Particle<F, 3> + Send,
