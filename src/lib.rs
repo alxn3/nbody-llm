@@ -1,3 +1,5 @@
+#![allow(incomplete_features)]
+#![feature(generic_const_exprs)]
 #[cfg(feature = "render")]
 pub mod render;
 

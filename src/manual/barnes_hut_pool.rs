@@ -8,42 +8,57 @@ use crate::shared::{
     AABB, Bounds, Float, Integrator, LeapFrogIntegrator, Particle, Simulation, SimulationSettings,
 };
 
-#[derive(Clone)]
-struct OrthNode<F: Float, const D: usize> {
+#[derive(Debug)]
+struct OrthNode<F: Float, const D: usize>
+where
+    [(); 1 << D]:,
+{
     center_of_mass: SVector<F, D>,
     bounds: Bounds<F, D>,
     mass: F,
-    // TODO: use an array with size 2^D after const_generics stabilizes #![feature(const_generics)]
-    children: Vec<Option<OrthNode<F, D>>>,
+    children: [Option<Box<OrthNode<F, D>>>; 1 << D],
 }
 
-impl<F: Float, const D: usize> OrthNode<F, D> {
+impl<F: Float, const D: usize> OrthNode<F, D>
+where
+    [(); 1 << D]:,
+{
     fn new(bounds: Bounds<F, D>) -> Self {
         Self {
             bounds,
             // fill with none.
-            children: vec![None; 1 << D],
+            children: std::array::from_fn(|_| None),
             center_of_mass: SVector::<F, D>::zeros(),
             mass: F::from(0.0).unwrap(),
         }
     }
 }
 
-struct OrthNodeIterator<'a, F: Float, const D: usize> {
+struct OrthNodeIterator<'a, F: Float, const D: usize>
+where
+    [(); 1 << D]:,
+{
     current: Vec<&'a OrthNode<F, D>>,
     next: Vec<&'a OrthNode<F, D>>,
     current_index: usize,
     current_depth: usize,
 }
 
-impl<'a, F: Float, const D: usize> Iterator for OrthNodeIterator<'a, F, D> {
+impl<'a, F: Float, const D: usize> Iterator for OrthNodeIterator<'a, F, D>
+where
+    [(); 1 << D]:,
+{
     type Item = (usize, &'a OrthNode<F, D>);
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.current_index < self.current.len() {
             let node = self.current[self.current_index];
-            self.next
-                .extend(node.children.iter().filter_map(|n| n.as_ref()));
+            self.next.extend(
+                node.children
+                    .iter()
+                    .filter_map(|n| n.as_ref())
+                    .map(|n| n.as_ref()),
+            );
             self.current_index += 1;
             Some((self.current_depth, node))
         } else if self.next.is_empty() {
@@ -58,7 +73,10 @@ impl<'a, F: Float, const D: usize> Iterator for OrthNodeIterator<'a, F, D> {
     }
 }
 
-impl<'a, F: Float, const D: usize> IntoIterator for &'a OrthNode<F, D> {
+impl<'a, F: Float, const D: usize> IntoIterator for &'a OrthNode<F, D>
+where
+    [(); 1 << D]:,
+{
     type Item = (usize, &'a OrthNode<F, D>);
     type IntoIter = OrthNodeIterator<'a, F, D>;
 
@@ -76,6 +94,7 @@ pub struct BarnesHutPoolSimulation<F: Float, const D: usize, P, I = LeapFrogInte
 where
     P: Particle<F, D> + Sized + Send,
     I: Integrator<F, D, P>,
+    [(); 1 << D]:,
 {
     points: Vec<P>,
     root: Option<OrthNode<F, D>>,
@@ -95,12 +114,13 @@ impl<F: Float, const D: usize, P, I> Clone for BarnesHutPoolSimulation<F, D, P, 
 where
     P: Particle<F, D> + Send + Sync,
     I: Integrator<F, D, P> + Send + Sync,
+    [(); 1 << D]:,
 {
     fn clone(&self) -> Self {
         Self {
             points: self.points.clone(),
-            root: self.root.clone(),
-            bounds: self.bounds.clone(),
+            root: None,
+            bounds: self.bounds,
             integrator: self.integrator.clone(),
             settings: self.settings.clone(),
             elapsed: self.elapsed,
@@ -118,6 +138,7 @@ impl<F: Float, const D: usize, P, I> BarnesHutPoolSimulation<F, D, P, I>
 where
     P: Particle<F, D> + Send + Sync,
     I: Integrator<F, D, P> + Send + Sync,
+    [(); 1 << D]:,
 {
     fn build_tree(points: &[&P], bounds: Bounds<F, D>) -> OrthNode<F, D> {
         match points.len() {
@@ -130,7 +151,7 @@ where
                 node
             }
             _ => {
-                let mut orthants = vec![Vec::new(); 1 << D];
+                let mut orthants: [Vec<&P>; 1 << D] = std::array::from_fn(|_| Vec::new());
                 for point in points.iter() {
                     let orthant = bounds.get_orthant(point.position());
                     orthants[orthant].push(*point);
@@ -143,18 +164,18 @@ where
                         0 => None,
                         _ => {
                             let child_bounds = bounds.create_orthant(i);
-                            Some(Self::build_tree(orthant, child_bounds))
+                            Some(Box::new(Self::build_tree(orthant, child_bounds)))
                         }
                     })
                     .collect::<Vec<_>>();
 
                 let mut node = OrthNode::new(bounds);
-                node.children = children;
+                node.children = children.try_into().unwrap();
                 node.mass = points.iter().map(|p| p.get_mass()).sum();
                 node.center_of_mass = points
                     .iter()
                     .map(|p| *p.position() * p.get_mass())
-                    .sum::<SVector::<F, D>>()
+                    .sum::<SVector<F, D>>()
                     / node.mass;
                 node
             }
@@ -186,6 +207,7 @@ impl<F: Float, const D: usize, P, I> Simulation<F, D, P, I> for BarnesHutPoolSim
 where
     P: Particle<F, D> + Send + Sync,
     I: Integrator<F, D, P> + Send + Sync,
+    [(); 1 << D]:,
 {
     fn new(points: Vec<P>, integrator: I, bounds: Bounds<F, D>) -> Self {
         Self {
@@ -209,7 +231,7 @@ where
         self.elapsed = F::from(0.0).unwrap();
         self.root = Some(Self::build_tree(
             self.points.iter().collect::<Vec<_>>().as_slice(),
-            self.bounds.clone(),
+            self.bounds,
         ));
     }
 
@@ -228,7 +250,7 @@ where
     fn update_forces(&mut self) {
         self.root = Some(Self::build_tree(
             self.points.iter().collect::<Vec<_>>().as_slice(),
-            self.bounds.clone(),
+            self.bounds,
         ));
 
         if let Some(root) = &self.root {

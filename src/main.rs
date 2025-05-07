@@ -1,3 +1,6 @@
+#![allow(incomplete_features)]
+#![feature(generic_const_exprs)]
+
 use clap::Parser;
 
 use nlib::{
@@ -126,7 +129,7 @@ fn main() {
         ));
     }
 
-    let mut sim = llm::create_barnes_hut_3d(
+    let mut sim = manual::BarnesHutPoolSimulation::new(
         points,
         LeapFrogIntegrator::new(),
         Bounds::new([0.0, 0.0, 0.0].into(), box_width),
