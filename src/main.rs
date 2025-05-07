@@ -129,11 +129,18 @@ fn main() {
         ));
     }
 
+    // let mut sim = llm::create_barnes_hut_3d(
+    //     points.clone(),
+    //     LeapFrogIntegrator::new(),
+    //     Bounds::new([0.0, 0.0, 0.0].into(), box_width),
+    // );
+
     let mut sim = manual::BarnesHutPoolSimulation::new(
         points,
         LeapFrogIntegrator::new(),
         Bounds::new([0.0, 0.0, 0.0].into(), box_width),
     );
+
     sim.settings_mut().dt = 3e-2;
     sim.settings_mut().g_soft = 0.02;
     sim.settings_mut().theta2 = 1.0;
