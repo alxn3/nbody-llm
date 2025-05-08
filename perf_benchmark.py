@@ -51,9 +51,9 @@ else:
         75000,
         100000,
     ]
-print(f"Benchmarking point counts: {points}")
-print(f"With threads: {sorted(threads)}")
-print()
+print(f"Benchmarking point counts: {points}", file=sys.stderr)
+print(f"With threads: {sorted(threads)}", file=sys.stderr)
+print("", file=sys.stderr)
 
 bf_max = 3000
 thread_max = {
@@ -67,8 +67,7 @@ if args.output:
 else:
     output_csv = f"perf_benchmark_{base_name}.csv"
 
-print(f'Writing results to "{output_csv}"...')
-print()
+print(f'Writing results to "{output_csv}"...', file=sys.stderr)
 
 env = os.environ.copy()
 
