@@ -1,0 +1,8 @@
+<!doctype html><html lang=en><meta charset=UTF-8><meta content="width=device-width,initial-scale=1.0" name=viewport><title>Ray Marcher</title><style>*{margin:0}html,body{width:100%;height:100%;overflow:hidden}canvas{width:100%;height:100%;display:block}</style><script type=module>import init, * as bindings from '/nbody-llm/nbody-32c48c6eb22975d3.js';
+const wasm = await init({ module_or_path: '/nbody-llm/nbody-32c48c6eb22975d3_bg.wasm' });
+
+
+window.wasmBindings = bindings;
+
+
+dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));</script><link crossorigin href=/nbody-llm/nbody-32c48c6eb22975d3.js integrity=sha384-SA2V0x9uKZcSIlYvJehag8B/xR9vP+ThN8M4cA1FAjt99xdfb06spT7UFk7jhoZ+ rel=modulepreload><link as=fetch crossorigin href=/nbody-llm/nbody-32c48c6eb22975d3_bg.wasm integrity=sha384-t+knedIAH1idNqEsJeEg6TUkxw/w96k7NepELtijrKhv+Ug+fR//xXhVkH/hfWFm rel=preload type=application/wasm></head><body><canvas id=canvas></canvas></body></html>
