@@ -11,6 +11,7 @@ import subprocess
 
 parser = argparse.ArgumentParser("Benchmarking tool")
 parser.add_argument("executable", help="Executable to benchmark")
+parser.add_argument("-o", "--output", help="Output file")
 args = parser.parse_args()
 
 # check if executables exist
@@ -26,7 +27,25 @@ x = os.cpu_count()
 while x > 0:
     threads.append(x)
     x = x // 2
-points = [10, 30, 50, 75, 100, 300, 500, 750, 1000, 3000, 5000, 7500, 10000, 30000, 50000, 75000, 100000]
+points = [
+    10,
+    30,
+    50,
+    75,
+    100,
+    300,
+    500,
+    750,
+    1000,
+    3000,
+    5000,
+    7500,
+    10000,
+    30000,
+    50000,
+    75000,
+    100000,
+]
 bf_max = 3000
 thread_max = {
     1: 10000,
@@ -34,7 +53,12 @@ thread_max = {
     4: 50000,
 }
 
-output_csv = f"perf_benchmark_{base_name}.csv"
+if args.output:
+    output_csv = args.output
+else:
+    output_csv = f"perf_benchmark_{base_name}.csv"
+
+print(f'Writing results to "{output_csv}"')
 
 env = os.environ.copy()
 
@@ -90,11 +114,14 @@ with open(output_csv, "w") as f:
             )
             f.write("\n")
             if i % 10 == 0:
-                print("\n".join(
-                    [
-                        f'"{executable}"{DELIM}{thread}{DELIM}{point}{DELIM}{x}'
-                        for x in lines
-                    ]
-                ), file=sys.stderr)
+                print(
+                    "\n".join(
+                        [
+                            f'"{executable}"{DELIM}{thread}{DELIM}{point}{DELIM}{x}'
+                            for x in lines
+                        ]
+                    ),
+                    file=sys.stderr,
+                )
                 print(f"Progress: {i}/{len(threads) * len(points)}", file=sys.stderr)
             i += 1
